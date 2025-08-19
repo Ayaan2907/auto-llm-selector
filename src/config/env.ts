@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Logger } from "../utils/logger";
+import { Logger } from "../utils/logger.js";
 
 const logger = new Logger("Config:Env");
 
@@ -24,7 +24,7 @@ const validateEnv = () => {
     return parsed;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const missingVars = error.errors.map((err) => err.path.join("."));
+      const missingVars = error.issues.map((err: any) => err.path.join("."));
       logger.error("Invalid environment variables", { error: { missingVars } });
       throw new Error(
         `❌ Invalid environment variables: ${missingVars.join(
