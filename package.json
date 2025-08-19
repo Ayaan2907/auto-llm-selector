@@ -1,5 +1,5 @@
 {
-  "name": "auto-prompt-router-to-llm",
+  "name": "auto-llm-selector",
   "version": "1.0.0",
   "description": "Auto Prompt Router To LLM",
   "type": "module",
