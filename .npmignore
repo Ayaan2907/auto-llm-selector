@@ -1,0 +1,34 @@
+# Source files (since we publish built files)
+src/
+*.ts
+!*.d.ts
+
+# Development files
+tsconfig.json
+tsup.config.ts
+.eslintrc*
+.prettierrc*
+
+# Tests
+test/
+*.test.*
+*.spec.*
+
+README.md
+
+# Development dependencies
+node_modules/
+
+# Build artifacts we don't need
+*.tsbuildinfo
+*.log
+
+# Environment and config files
+.env*
+.DS_Store
+
+# IDE files
+.vscode/
+.cursorrules/
+.windsurfrules/
+.idea/
