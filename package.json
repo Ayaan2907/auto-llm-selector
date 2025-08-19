@@ -21,7 +21,8 @@
     "dev": "tsup --watch",
     "clean": "rm -rf dist",
     "start": "node dist/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test --import tsx/esm test/**/*.test.ts",
+    "test:watch": "node --test --watch --import tsx/esm test/**/*.test.ts"
   },
   "keywords": [],
   "author": "Ayaan Kaifullah",
@@ -32,6 +33,10 @@
     "eslint": "^9.33.0",
     "prettier": "^3.6.2",
     "tsup": "^8.5.0",
+    "tsx": "^4.20.4",
     "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "zod": "^4.0.17"
   }
 }
