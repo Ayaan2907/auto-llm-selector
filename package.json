@@ -1,6 +1,6 @@
 {
   "name": "auto-llm-selector",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Auto Prompt Router To LLM",
   "type": "module",
   "main": "dist/index.js",
@@ -9,6 +9,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ayaan2907/auto-llm-selector.git"
   },
   "files": [
     "dist"
