@@ -67,4 +67,5 @@ class InMemoryModelCache {
 }
 
 export const modelCache = new InMemoryModelCache();
+export { InMemoryModelCache };
 export type { ModelInfo };
