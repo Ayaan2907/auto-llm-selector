@@ -1,13 +1,7 @@
 import { Logger } from "./utils/logger.js";
 import { modelCache } from "./cache.js";
-import { 
-    type RouterConfig, 
-    type PromptProperties, 
-    type ModelSelection, 
-    type PromptCategory,
-    type ProcessedModel,
-    PromptType
-} from "./types.js";
+import { PromptClassifier } from "./classifier.js";
+import type { RouterConfig, PromptProperties, ModelSelection, ProcessedModel, PromptCategory } from "./types.js";
 
 export class AutoPromptRouter {
     private logger: Logger;
@@ -16,7 +10,7 @@ export class AutoPromptRouter {
 
     constructor(config: RouterConfig) {
         this.config = {
-            selectorModel: "openai/gpt-4o-mini",
+            selectorModel: "openai/gpt-oss-20b:free",
             enableLogging: false,
             ...config
         };
@@ -70,6 +64,7 @@ export class AutoPromptRouter {
             const suitableModels = processedModels.filter(model => 
                 model.contextLength >= properties.tokenLimit
             );
+            // TODO: Add more filtering based on properties, provider, semantics
             
             // Step 3: Let LLM make intelligent selection from all suitable models
             const finalSelection = await this.getLLMDecision(prompt, properties, suitableModels);
@@ -101,26 +96,7 @@ export class AutoPromptRouter {
 
     // Private methods 
     private async classifyPrompt(prompt: string): Promise<PromptCategory> {
-        // Simple rule-based classification - can be enhanced later
-        const lowerPrompt = prompt.toLowerCase();
-        
-        if (lowerPrompt.includes('code') || lowerPrompt.includes('function') || lowerPrompt.includes('debug') || lowerPrompt.includes('write') || lowerPrompt.includes('program')|| lowerPrompt.includes('code')) {
-            return { type: PromptType.Coding, confidence: 0.8 };
-        }
-        if (lowerPrompt.includes('creative') || lowerPrompt.includes('story') || lowerPrompt.includes('poem')) {
-            return { type: PromptType.Creative, confidence: 0.8 };
-        }
-        if (lowerPrompt.includes('analyze') || lowerPrompt.includes('data') || lowerPrompt.includes('research')) {
-            return { type: PromptType.Analytical, confidence: 0.8 };
-        }
-        if (lowerPrompt.includes('reason') || lowerPrompt.includes('logic') || lowerPrompt.includes('solve')) {
-            return { type: PromptType.Reasoning, confidence: 0.8 };
-        }
-        if (lowerPrompt.includes('chat') || lowerPrompt.includes('talk') || lowerPrompt.includes('conversation') || lowerPrompt.includes('hi') || lowerPrompt.includes('hello') || lowerPrompt.includes('hey')) {
-            return { type: PromptType.Conversational, confidence: 0.8 };
-        }
-        
-        return { type: PromptType.General, confidence: 0.6 };
+        return PromptClassifier.classifyPrompt(prompt);
     }
 
     private async getLLMDecision(
@@ -166,14 +142,14 @@ REQUIREMENTS:
 ${modelInfo.map(m => `${m.id}: ${m.name} - ${m.description || 'No description available'} (Context: ${m.contextLength}, Cost: $${m.promptCost}/$${m.completionCost} per token, Provider: ${m.provider})`).join('\n\n')}
 </models_available>
 
-You must respond with valid JSON in this exact format:
+You must respond with valid JSON in this EXACT format:
 {
   "model": "exact_model_id_from_list",
   "reason": "brief explanation of why this model was selected",
   "confidence": 0.85
 }
 
-Important: The "model" field must exactly match one of the model IDs from the list above.`;
+Important: The "model" field must exactly match one of the model IDs from the list above. and in response i do not want any extra char like \`\`\` json or any other char`;
 
         try {
             // Make API call to selector model
