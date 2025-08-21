@@ -24,7 +24,7 @@ class InMemoryModelCache {
   }
 
   async getModel(modelId: string): Promise<ModelInfo | undefined> {
-    const models = await this.getModels();
+    await this.getModels();
     return this.cache.get(modelId);
   }
 
