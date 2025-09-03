@@ -1,146 +1,204 @@
-import { Logger } from "./utils/logger.js";
-import { modelCache } from "./cache.js";
-import { PromptClassifier } from "./classifier.js";
-import type { RouterConfig, PromptProperties, ModelSelection, ProcessedModel, PromptCategory } from "./types.js";
+import { Logger } from './utils/logger.js';
+import { modelCache } from './cache.js';
+import { PromptClassifier } from './classifier.js';
+import type {
+  RouterConfig,
+  PromptProperties,
+  ModelSelection,
+  PromptCategory,
+  ModelProfile,
+} from './types.js';
 
 export class AutoPromptRouter {
-    private logger: Logger;
-    private config: RouterConfig;
-    private isInitialized: boolean = false;
+  private logger: Logger;
+  private config: RouterConfig;
+  private isInitialized: boolean = false;
 
-    constructor(config: RouterConfig) {
-        this.config = {
-            selectorModel: "openai/gpt-oss-20b:free",
-            enableLogging: false,
-            ...config
+  constructor(config: RouterConfig) {
+    this.config = {
+      selectorModel: 'openai/gpt-oss-20b:free',
+      enableLogging: false,
+      ...config,
+    };
+
+    this.logger = new Logger('AutoPromptRouter');
+
+    // Set environment variables for cache to use
+    process.env.OPEN_ROUTER_API_KEY = this.config.OPEN_ROUTER_API_KEY;
+  }
+
+  /**
+   * Initialize the router by fetching and caching model data
+   */
+  async initialize(): Promise<void> {
+    try {
+      this.logger.info('Initializing AutoPromptRouter');
+
+      // Pre-fetch and cache model profiles
+      await modelCache.getModelProfiles();
+
+      this.isInitialized = true;
+      this.logger.info('AutoPromptRouter initialized successfully');
+    } catch (error) {
+      this.logger.error('Failed to initialize AutoPromptRouter', error);
+      throw new Error(
+        'Failed to initialize router. Please check your OpenRouter API key.'
+      );
+    }
+  }
+
+  /**
+   * Get model recommendation for a prompt
+   */
+  async getModelRecommendation(
+    prompt: string,
+    properties: PromptProperties
+  ): Promise<ModelSelection> {
+    if (!this.isInitialized) {
+      throw new Error('Router not initialized. Call initialize() first.');
+    }
+
+    this.logger.info('Getting model recommendation', {
+      promptLength: prompt.length,
+      properties,
+    });
+
+    try {
+      // Step 1: Get all model profiles from cache
+      const allProfiles = await modelCache.getModelProfiles();
+      this.logger.debug(
+        `Retrieved ${allProfiles.length} model profiles from cache`
+      );
+
+      // Step 2: Filter by reasoning requirement ONLY (if needed)
+      let availableProfiles = allProfiles;
+      if (properties.reasoning) {
+        availableProfiles = allProfiles.filter(
+          profile => profile.characteristics.isReasoning
+        );
+        this.logger.debug(
+          `Filtered to ${availableProfiles.length} reasoning-capable models`
+        );
+      }
+
+      // Step 3: Process prompt through classifier → ML → Category
+      const category = await this.classifyPrompt(prompt);
+      this.logger.info(
+        `Prompt classified as: ${category.type} (confidence: ${category.confidence.toFixed(2)})`
+      );
+
+      // Step 4: Filter profiles by category capability
+      const categoryKey =
+        category.type.toLowerCase() as keyof ModelProfile['capabilities'];
+      const categoryProfiles = availableProfiles.filter(
+        profile => profile.capabilities[categoryKey] >= 0.3 // Minimum capability threshold
+      );
+      this.logger.debug(
+        `Filtered to ${categoryProfiles.length} models suitable for ${category.type}`
+      );
+
+      if (categoryProfiles.length === 0) {
+        throw new Error(
+          `No suitable models found for category: ${category.type}`
+        );
+      }
+
+      // Step 5: Pass to LLM decision with profiles
+      const finalSelection = await this.getLLMDecisionWithProfiles(
+        prompt,
+        properties,
+        categoryProfiles,
+        category
+      );
+
+      this.logger.info('Model recommendation generated', { finalSelection });
+      return finalSelection;
+    } catch (error) {
+      this.logger.error('Failed to get model recommendation', error);
+      throw new Error('Failed to generate model recommendation');
+    }
+  }
+
+  /**
+   * Get available models (for debugging/inspection)
+   */
+  async getAvailableModels(): Promise<ModelProfile[]> {
+    return await modelCache.getModelProfiles();
+  }
+
+  /**
+   * Clear model cache
+   */
+  clearCache(): void {
+    modelCache.clearCache();
+    this.logger.info('Model cache cleared');
+  }
+
+  // Private methods
+  private async classifyPrompt(prompt: string): Promise<PromptCategory> {
+    return await PromptClassifier.classifyPrompt(prompt);
+  }
+
+  private async getLLMDecisionWithProfiles(
+    prompt: string,
+    properties: PromptProperties,
+    categoryProfiles: ModelProfile[],
+    category: PromptCategory
+  ): Promise<ModelSelection> {
+    // Create enhanced prompt with model profiles
+    const profileInfo = categoryProfiles
+      .map(profile => {
+        const categoryScore =
+          profile.capabilities[
+            category.type.toLowerCase() as keyof ModelProfile['capabilities']
+          ];
+        return {
+          id: profile.id,
+          name: profile.name,
+          description: profile.description,
+          categoryScore: Math.round(categoryScore * 100),
+          speedTier: profile.characteristics.speedTier,
+          costTier: profile.characteristics.costTier,
+          accuracyTier: profile.characteristics.accuracyTier,
+          contextLength: profile.contextLength,
+          promptCost: profile.promptCostPerToken,
+          completionCost: profile.completionCostPerToken,
+          provider: profile.characteristics.provider,
+          isReasoning: profile.characteristics.isReasoning,
+          confidence: Math.round(profile.profileConfidence * 100),
         };
-        
-        this.logger = new Logger("AutoPromptRouter");
+      })
+      .sort((a, b) => b.categoryScore - a.categoryScore); // Sort by category performance
 
-        // Set environment variables for cache to use
-        process.env.OPEN_ROUTER_API_KEY = this.config.OPEN_ROUTER_API_KEY;
-    }
+    // Create system prompt with model profiles
+    const selectionPrompt = `You are an expert LLM selection system. Based on the user's prompt and requirements, select the best model from the available profiles.
 
-    /**
-     * Initialize the router by fetching and caching model data
-     */
-    async initialize(): Promise<void> {
-        try {
-            this.logger.info("Initializing AutoPromptRouter");
-            
-            // Pre-fetch and cache models
-            await modelCache.getModels();
-            
-            this.isInitialized = true;
-            this.logger.info("AutoPromptRouter initialized successfully");
-            
-        } catch (error) {
-            this.logger.error("Failed to initialize AutoPromptRouter", error);
-            throw new Error("Failed to initialize router. Please check your OpenRouter API key.");
-        }
-    }
+PROMPT ANALYSIS:
+- Classified Category: ${category.type} (${Math.round(category.confidence * 100)}% confidence)
+- User Input: "${prompt}"
 
-    /**
-     * Get model recommendation for a prompt
-     */
-    async getModelRecommendation(
-        prompt: string, 
-        properties: PromptProperties
-    ): Promise<ModelSelection> {
-        if (!this.isInitialized) {
-            throw new Error("Router not initialized. Call initialize() first.");
-        }
+USER REQUIREMENTS:
+- Accuracy Priority: ${properties.accuracy}/1 (1 = highest accuracy needed)
+- Cost Sensitivity: ${properties.cost}/1 (0 = very cost-sensitive, 1 = cost no object)
+- Speed Priority: ${properties.speed}/1 (1 = fastest response needed)
+- Context Length: ${properties.tokenLimit} tokens minimum
+- Reasoning Required: ${properties.reasoning}
 
-        this.logger.info("Getting model recommendation", { 
-            promptLength: prompt.length,
-            properties 
-        });
+AVAILABLE MODEL PROFILES (filtered for ${category.type} tasks):
+${profileInfo
+  .map(
+    p =>
+      `${p.id}:
+  - ${category.type} Performance: ${p.categoryScore}%
+  - Speed: ${p.speedTier} | Cost: ${p.costTier} | Accuracy: ${p.accuracyTier}
+  - Context: ${p.contextLength.toLocaleString()} tokens
+  - Pricing: $${p.promptCost.toFixed(6)}/$${p.completionCost.toFixed(6)} per token
+  - Provider: ${p.provider} | Reasoning: ${p.isReasoning ? 'Yes' : 'No'}
+  - Profile Confidence: ${p.confidence}%`
+  )
+  .join('\n\n')}
 
-        try {
-            // Step 1: Get processed models
-            const processedModels = await this.getAvailableModels();
-            
-            // Step 2: Basic filtering (only keep models that can handle token requirements)
-            const suitableModels = processedModels.filter(model => 
-                model.contextLength >= properties.tokenLimit
-            );
-            // TODO: Add more filtering based on properties, provider, semantics
-            
-            // Step 3: Let LLM make intelligent selection from all suitable models
-            const finalSelection = await this.getLLMDecision(prompt, properties, suitableModels);
-            
-            this.logger.info("Model recommendation generated", { finalSelection });
-            return finalSelection;
-            
-        } catch (error) {
-            this.logger.error("Failed to get model recommendation", error);
-            throw new Error("Failed to generate model recommendation");
-        }
-    }
-
-    /**
-     * Get available models (for debugging/inspection)
-     */
-    async getAvailableModels(): Promise<ProcessedModel[]> {
-        const models = await modelCache.getModels();
-        return models.map(this.processModel);
-    }
-
-    /**
-     * Clear model cache
-     */
-    clearCache(): void {
-        modelCache.clearCache();
-        this.logger.info("Model cache cleared");
-    }
-
-    // Private methods 
-    private async classifyPrompt(prompt: string): Promise<PromptCategory> {
-        return PromptClassifier.classifyPrompt(prompt);
-    }
-
-    private async getLLMDecision(
-        prompt: string,
-        properties: PromptProperties,
-        suitableModels: ProcessedModel[]
-    ): Promise<ModelSelection> {
-        // Prepare model information for LLM
-        const modelInfo = suitableModels.map(model => ({
-            id: model.id,
-            name: model.name,
-            description: model.description,
-            contextLength: model.contextLength,
-            promptCost: model.promptCostPerToken,
-            completionCost: model.completionCostPerToken,
-            provider: model.provider
-        }));
-
-        // Create prompt for LLM to make selection
-        const selectionPrompt = `You are an expert in selecting the best LLM for a given prompt. 
-
-Given the following user prompt, select the best LLM for this prompt based on the following criteria and the preferences of the user:
-
-<criteria>
-Category of prompt,
-Accuracy,
-Cost,
-Speed,
-Token Limit,
-Reasoning Enabled,
-</criteria>
-
-USER PROMPT: "${prompt}"
-
-REQUIREMENTS:
-- Accuracy importance: ${properties.accuracy}/1 (higher = more important)
-- Cost sensitivity: ${properties.cost}/1 (lower = more cost-sensitive)  
-- Speed requirement: ${properties.speed}/1 (higher = faster needed)
-- Token limit needed: ${properties.tokenLimit}
-- Needs reasoning: ${properties.reasoning}
-
-<models_available>
-${modelInfo.map(m => `${m.id}: ${m.name} - ${m.description || 'No description available'} (Context: ${m.contextLength}, Cost: $${m.promptCost}/$${m.completionCost} per token, Provider: ${m.provider})`).join('\n\n')}
-</models_available>
+Select the optimal model considering the user's priorities (accuracy/cost/speed) and the models' ${category.type} capabilities.
 
 You must respond with valid JSON in this EXACT format:
 {
@@ -151,73 +209,64 @@ You must respond with valid JSON in this EXACT format:
 
 Important: The "model" field must exactly match one of the model IDs from the list above. and in response i do not want any extra char like \`\`\` json or any other char`;
 
-        try {
-            // Make API call to selector model
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${process.env.OPEN_ROUTER_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    model: this.config.selectorModel,
-                    messages: [{ role: "user", content: selectionPrompt }],
-                    temperature: 0.1
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`LLM selection failed: ${response.status}`);
-            }
-
-            const data = await response.json() as any;
-            const llmResponse = data.choices[0].message.content;
-            
-            // Parse LLM response
-            const selection = JSON.parse(llmResponse);
-            
-            // Classify the prompt for category
-            const category = await this.classifyPrompt(prompt);
-            
-            return {
-                model: selection.model,
-                reason: selection.reason,
-                confidence: selection.confidence,
-                category
-            };
-
-        } catch (error) {
-            this.logger.error("LLM decision failed, falling back to first suitable model", error);
-            
-            // Fallback to first suitable model
-            if (suitableModels.length === 0) {
-                throw new Error("No suitable models found for the given requirements");
-            }
-            
-            const fallbackModel = suitableModels[0];
-            const category = await this.classifyPrompt(prompt);
-            
-            return {
-                model: fallbackModel?.id || "",
-                reason: `Fallback selection: ${fallbackModel?.name} (LLM selection failed)`,
-                confidence: 0.5,
-                category
-            };
+    try {
+      // Make API call to selector model
+      const response = await fetch(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.OPEN_ROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.config.selectorModel,
+            messages: [{ role: 'system', content: selectionPrompt }],
+            temperature: 0.1,
+          }),
         }
-    }
+      );
 
+      if (!response.ok) {
+        throw new Error(`LLM selection failed: ${response.status}`);
+      }
 
-    private processModel(model: any): ProcessedModel {
-        return {
-            id: model.id,
-            name: model.name,
-            description: model.description,
-            contextLength: model.context_length,
-            promptCostPerToken: parseFloat(model.pricing.prompt),
-            completionCostPerToken: parseFloat(model.pricing.completion),
-            maxCompletionTokens: model.top_provider.max_completion_tokens,
-            isModerated: model.top_provider.is_moderated,
-            provider: model.id.split('/')[0] || 'unknown'
-        };
+      const data = (await response.json()) as {
+        choices: Array<{ message: { content: string } }>;
+      };
+      const llmResponse = data.choices[0]?.message.content;
+      if (!llmResponse) {
+        throw new Error('No response content from LLM');
+      }
+
+      // Parse LLM response
+      const selection = JSON.parse(llmResponse);
+
+      return {
+        model: selection.model,
+        reason: selection.reason,
+        confidence: selection.confidence,
+        category,
+      };
+    } catch (error) {
+      this.logger.error(
+        'LLM decision failed, falling back to first suitable model',
+        error
+      );
+
+      // Fallback to first suitable model
+      if (categoryProfiles.length === 0) {
+        throw new Error('No suitable models found for the given requirements');
+      }
+
+      const fallbackModel = categoryProfiles[0];
+
+      return {
+        model: fallbackModel?.id || '',
+        reason: `Fallback selection: ${fallbackModel?.name} (LLM selection failed)`,
+        confidence: 0.5,
+        category,
+      };
     }
+  }
 }

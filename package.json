@@ -1,6 +1,6 @@
 {
   "name": "auto-llm-selector",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Auto Prompt Router To LLM",
   "type": "module",
   "main": "dist/index.js",
@@ -26,15 +26,27 @@
     "clean": "rm -rf dist",
     "start": "node dist/index.js",
     "test": "node --test --import tsx/esm test/**/*.test.ts",
-    "test:watch": "node --test --watch --import tsx/esm test/**/*.test.ts"
+    "test:watch": "node --test --watch --import tsx/esm test/**/*.test.ts",
+    "lint": "eslint \"src/**/*.{js,ts}\"",
+    "lint:fix": "eslint \"src/**/*.{js,ts}\" --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "pre-commit": "lint-staged",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "Ayaan Kaifullah",
   "license": "MIT",
   "packageManager": "pnpm@10.12.1",
   "devDependencies": {
+    "@eslint/js": "^9.34.0",
     "@types/node": "^24.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.42.0",
+    "@typescript-eslint/parser": "^8.42.0",
     "eslint": "^9.33.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.6",
     "prettier": "^3.6.2",
     "tsup": "^8.5.0",
     "tsx": "^4.20.4",
@@ -46,5 +58,14 @@
     "ml-matrix": "^6.12.1",
     "natural": "^8.1.0",
     "zod": "^4.0.17"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   }
 }

@@ -1,9 +1,9 @@
-import { Logger } from "./utils/logger.js";
-import { ModelProfiler } from "./lib/model-profiler.js";
-import type { ModelInfo, PromptCategory, ModelProfile } from "./types.js";
+import { Logger } from './utils/logger.js';
+import { ModelProfiler } from './lib/model-profiler.js';
+import type { ModelInfo, PromptCategory, ModelProfile } from './types.js';
 
-const logger = new Logger("Cache:ModelStore");
-const embeddingLogger = new Logger("Cache:EmbeddingStore");
+const logger = new Logger('Cache:ModelStore');
+const embeddingLogger = new Logger('Cache:EmbeddingStore');
 
 interface llmModelProviderResponse {
   data: ModelInfo[];
@@ -16,11 +16,14 @@ class InMemoryModelCache {
 
   async getModelProfiles(): Promise<ModelProfile[]> {
     const now = Date.now();
-    
-    if (this.profileCache.size === 0 || now - this.lastFetched > this.CACHE_TTL) {
+
+    if (
+      this.profileCache.size === 0 ||
+      now - this.lastFetched > this.CACHE_TTL
+    ) {
       await this.fetchAndCacheProfiles();
     }
-    
+
     return Array.from(this.profileCache.values());
   }
 
@@ -29,12 +32,11 @@ class InMemoryModelCache {
     return this.profileCache.get(modelId);
   }
 
-
   /**
    * Get profiles filtered by category performance
    */
   async getTopModelsForCategory(
-    category: string, 
+    category: string,
     limit: number = 10,
     requirements?: {
       maxCost?: number;
@@ -43,30 +45,41 @@ class InMemoryModelCache {
     }
   ): Promise<ModelProfile[]> {
     const profiles = await this.getModelProfiles();
-    const categoryKey = category.toLowerCase() as keyof ModelProfile['capabilities'];
-    
+    const categoryKey =
+      category.toLowerCase() as keyof ModelProfile['capabilities'];
+
     return profiles
       .filter(profile => {
         // Basic capability threshold
         if (profile.capabilities[categoryKey] < 0.3) return false;
-        
+
         // Requirements filtering
-        if (requirements?.maxCost && profile.promptCostPerToken > requirements.maxCost) return false;
-        
+        if (
+          requirements?.maxCost &&
+          profile.promptCostPerToken > requirements.maxCost
+        )
+          return false;
+
         if (requirements?.minSpeed) {
           const speedOrder = ['slow', 'medium', 'fast', 'ultra-fast'];
-          const profileSpeedIndex = speedOrder.indexOf(profile.characteristics.speedTier);
+          const profileSpeedIndex = speedOrder.indexOf(
+            profile.characteristics.speedTier
+          );
           const requiredSpeedIndex = speedOrder.indexOf(requirements.minSpeed);
           if (profileSpeedIndex < requiredSpeedIndex) return false;
         }
-        
+
         if (requirements?.minAccuracy) {
           const accuracyOrder = ['basic', 'good', 'high', 'excellent'];
-          const profileAccuracyIndex = accuracyOrder.indexOf(profile.characteristics.accuracyTier);
-          const requiredAccuracyIndex = accuracyOrder.indexOf(requirements.minAccuracy);
+          const profileAccuracyIndex = accuracyOrder.indexOf(
+            profile.characteristics.accuracyTier
+          );
+          const requiredAccuracyIndex = accuracyOrder.indexOf(
+            requirements.minAccuracy
+          );
           if (profileAccuracyIndex < requiredAccuracyIndex) return false;
         }
-        
+
         return true;
       })
       .sort((a, b) => b.capabilities[categoryKey] - a.capabilities[categoryKey])
@@ -75,28 +88,28 @@ class InMemoryModelCache {
 
   private async fetchAndCacheProfiles(): Promise<void> {
     try {
-      logger.info("Fetching models from doer and generating profiles");
-      
+      logger.info('Fetching models from doer and generating profiles');
+
       // Use dynamic import to get env after it's been set by router
-      const { env } = await import("./config/env.js");
-      
-      const response = await fetch("https://openrouter.ai/api/v1/models", {
+      const { env } = await import('./config/env.js');
+
+      const response = await fetch('https://openrouter.ai/api/v1/models', {
         headers: {
-          "Authorization": `Bearer ${env.OPEN_ROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        }
+          Authorization: `Bearer ${env.OPEN_ROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!response.ok) {
         throw new Error(`OpenRouter API error: ${response.status}`);
       }
 
-      const data = await response.json() as llmModelProviderResponse;
-      
+      const data = (await response.json()) as llmModelProviderResponse;
+
       // Clear existing profiles and generate new ones
       this.profileCache.clear();
       let profilesGenerated = 0;
-      
+
       for (const modelInfo of data.data) {
         try {
           const profile = ModelProfiler.createModelProfile(modelInfo);
@@ -106,12 +119,13 @@ class InMemoryModelCache {
           logger.warn(`Failed to generate profile for ${modelInfo.id}:`, error);
         }
       }
-      
+
       this.lastFetched = Date.now();
-      logger.info(`Generated and cached ${profilesGenerated} model profiles from ${data.data.length} OpenRouter models`);
-      
+      logger.info(
+        `Generated and cached ${profilesGenerated} model profiles from ${data.data.length} OpenRouter models`
+      );
     } catch (error) {
-      logger.error("Failed to fetch models from OpenRouter", error);
+      logger.error('Failed to fetch models from OpenRouter', error);
       throw error;
     }
   }
@@ -119,7 +133,7 @@ class InMemoryModelCache {
   clearCache(): void {
     this.profileCache.clear();
     this.lastFetched = 0;
-    logger.info("Model cache cleared");
+    logger.info('Model cache cleared');
   }
 }
 
@@ -127,10 +141,16 @@ class InMemoryModelCache {
  * Cache for storing text embeddings and classification results
  */
 class InMemoryEmbeddingCache {
-  private embeddingCache: Map<string, { embedding: number[], timestamp: number }> = new Map();
-  private classificationCache: Map<string, { result: PromptCategory, timestamp: number }> = new Map();
+  private embeddingCache: Map<
+    string,
+    { embedding: number[]; timestamp: number }
+  > = new Map();
+  private classificationCache: Map<
+    string,
+    { result: PromptCategory; timestamp: number }
+  > = new Map();
   private referenceEmbeddings: Map<string, number[]> = new Map();
-  
+
   private readonly EMBEDDING_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly CLASSIFICATION_TTL = 30 * 60 * 1000; // 30 minutes
 
@@ -141,7 +161,7 @@ class InMemoryEmbeddingCache {
     const key = this.createKey(text);
     this.embeddingCache.set(key, {
       embedding: [...embedding], // Clone array
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
     embeddingLogger.debug(`Cached embedding for text (${text.length} chars)`);
   }
@@ -152,16 +172,18 @@ class InMemoryEmbeddingCache {
   getEmbedding(text: string): number[] | null {
     const key = this.createKey(text);
     const cached = this.embeddingCache.get(key);
-    
+
     if (!cached) return null;
-    
+
     // Check if expired
     if (Date.now() - cached.timestamp > this.EMBEDDING_TTL) {
       this.embeddingCache.delete(key);
       return null;
     }
-    
-    embeddingLogger.debug(`Retrieved cached embedding for text (${text.length} chars)`);
+
+    embeddingLogger.debug(
+      `Retrieved cached embedding for text (${text.length} chars)`
+    );
     return [...cached.embedding]; // Return copy
   }
 
@@ -172,9 +194,11 @@ class InMemoryEmbeddingCache {
     const key = this.createKey(text);
     this.classificationCache.set(key, {
       result: { ...result }, // Clone object
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    embeddingLogger.debug(`Cached classification: ${result.type} (confidence: ${result.confidence})`);
+    embeddingLogger.debug(
+      `Cached classification: ${result.type} (confidence: ${result.confidence})`
+    );
   }
 
   /**
@@ -183,16 +207,18 @@ class InMemoryEmbeddingCache {
   getClassification(text: string): PromptCategory | null {
     const key = this.createKey(text);
     const cached = this.classificationCache.get(key);
-    
+
     if (!cached) return null;
-    
+
     // Check if expired
     if (Date.now() - cached.timestamp > this.CLASSIFICATION_TTL) {
       this.classificationCache.delete(key);
       return null;
     }
-    
-    embeddingLogger.debug(`Retrieved cached classification: ${cached.result.type}`);
+
+    embeddingLogger.debug(
+      `Retrieved cached classification: ${cached.result.type}`
+    );
     return { ...cached.result }; // Return copy
   }
 
@@ -201,7 +227,9 @@ class InMemoryEmbeddingCache {
    */
   setReferenceEmbedding(category: string, embedding: number[]): void {
     this.referenceEmbeddings.set(category, [...embedding]);
-    embeddingLogger.info(`Stored reference embedding for category: ${category}`);
+    embeddingLogger.info(
+      `Stored reference embedding for category: ${category}`
+    );
   }
 
   /**
@@ -230,7 +258,7 @@ class InMemoryEmbeddingCache {
     this.embeddingCache.clear();
     this.classificationCache.clear();
     // Don't clear reference embeddings as they're expensive to recreate
-    embeddingLogger.info("Embedding and classification caches cleared");
+    embeddingLogger.info('Embedding and classification caches cleared');
   }
 
   /**
@@ -258,7 +286,9 @@ class InMemoryEmbeddingCache {
     }
 
     if (cleanedEmbeddings > 0 || cleanedClassifications > 0) {
-      embeddingLogger.info(`Cleaned up ${cleanedEmbeddings} embeddings and ${cleanedClassifications} classifications`);
+      embeddingLogger.info(
+        `Cleaned up ${cleanedEmbeddings} embeddings and ${cleanedClassifications} classifications`
+      );
     }
   }
 
@@ -269,7 +299,7 @@ class InMemoryEmbeddingCache {
     return {
       embeddings: this.embeddingCache.size,
       classifications: this.classificationCache.size,
-      referenceEmbeddings: this.referenceEmbeddings.size
+      referenceEmbeddings: this.referenceEmbeddings.size,
     };
   }
 
@@ -281,7 +311,7 @@ class InMemoryEmbeddingCache {
     let hash = 0;
     for (let i = 0; i < text.length; i++) {
       const char = text.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32bit integer
     }
     return `${hash}_${text.length}`;

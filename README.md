@@ -15,7 +15,7 @@ yarn add auto-prompt-router-to-llm
 ## Usage
 
 ```typescript
-import { /* your exports */ } from 'auto-prompt-router-to-llm'
+import {} from /* your exports */ 'auto-prompt-router-to-llm';
 
 // Basic usage example
 // TODO

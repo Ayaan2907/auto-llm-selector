@@ -3,16 +3,16 @@ export { AutoPromptRouter } from './router.js';
 
 // Export types for TypeScript users
 export type {
-    RouterConfig,
-    PromptProperties,
-    ModelSelection,
-    PromptCategory,
-    ProcessedModel,
-    ModelInfo,
-    ModelScore,
-    ModelProfile,
-    ModelCapabilities,
-    ModelCharacteristics
+  RouterConfig,
+  PromptProperties,
+  ModelSelection,
+  PromptCategory,
+  ProcessedModel,
+  ModelInfo,
+  ModelScore,
+  ModelProfile,
+  ModelCapabilities,
+  ModelCharacteristics,
 } from './types.js';
 
 export { PromptType } from './types.js';
