@@ -78,17 +78,46 @@ export interface ModelScore {
     }
 }
 
-export interface ModelInfo {
+// Model profiling interfaces
+export interface ModelCapabilities {
+    coding: number;           // 0-1: Coding task performance
+    creative: number;         // 0-1: Creative writing ability  
+    analytical: number;       // 0-1: Data analysis capability
+    reasoning: number;        // 0-1: Logical reasoning strength
+    conversational: number;   // 0-1: Chat/dialogue quality
+    general: number;          // 0-1: General knowledge tasks
+}
+
+export interface ModelCharacteristics {
+    speedTier: 'ultra-fast' | 'fast' | 'medium' | 'slow';
+    costTier: 'free' | 'cheap' | 'moderate' | 'expensive' | 'premium';
+    accuracyTier: 'basic' | 'good' | 'high' | 'excellent';
+    contextTier: 'small' | 'medium' | 'large' | 'huge';
+    provider: string;
+    modelFamily: string;      // e.g., 'gpt-4', 'claude-3', 'gemini'
+    isReasoning: boolean;     // Has chain-of-thought/reasoning capabilities
+    isMultimodal: boolean;    // Supports images/other modalities
+}
+
+export interface ModelProfile {
     id: string;
     name: string;
     description?: string;
-    context_length: number;
-    pricing: {
-      prompt: string;
-      completion: string;
-    };
-    top_provider: {
-      max_completion_tokens?: number;
-      is_moderated: boolean;
-    };
-  }
+    capabilities: ModelCapabilities;
+    characteristics: ModelCharacteristics;
+    contextLength: number;
+    promptCostPerToken: number;
+    completionCostPerToken: number;
+    maxCompletionTokens?: number;
+    isModerated: boolean;
+    profileConfidence: number;  // 0-1: How confident we are in this profile
+}
+
+export interface CategoryModelRanking {
+    category: PromptType;
+    rankedModels: {
+        model: ModelProfile;
+        score: number;
+        reasoning: string;
+    }[];
+}

@@ -1,6 +1,6 @@
 {
   "name": "auto-llm-selector",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Auto Prompt Router To LLM",
   "type": "module",
   "main": "dist/index.js",
@@ -41,6 +41,10 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "lru-cache": "^11.1.0",
+    "ml-matrix": "^6.12.1",
+    "natural": "^8.1.0",
     "zod": "^4.0.17"
   }
 }
