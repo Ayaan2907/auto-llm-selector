@@ -9,7 +9,10 @@ export type {
     PromptCategory,
     ProcessedModel,
     ModelInfo,
-    ModelScore
+    ModelScore,
+    ModelProfile,
+    ModelCapabilities,
+    ModelCharacteristics
 } from './types.js';
 
 export { PromptType } from './types.js';

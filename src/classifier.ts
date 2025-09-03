@@ -1,4 +1,8 @@
 import { PromptType, type PromptCategory } from './types.js'
+import { semanticClassifier } from './lib/semantic-classifier.js'
+import { Logger } from './utils/logger.js'
+
+const logger = new Logger('PromptClassifier')
 
 /**
  * Keywords for prompt classification
@@ -43,17 +47,71 @@ const SPECIFICITY_WEIGHTS = {
     low: 1
 } as const
 
+/**
+ * Hybrid scoring configuration
+ */
+const HYBRID_SCORING = {
+    SEMANTIC_WEIGHT: 0.6,      // 60% semantic
+    KEYWORD_WEIGHT: 0.4,       // 40% keyword
+    MIN_COMBINED_CONFIDENCE: 0.3,
+    FALLBACK_CONFIDENCE: 0.6
+} as const
+
 
 /**
  * Classifies prompts into categories based on content analysis
  */
 export class PromptClassifier {
     /**
-     * Classifies a prompt
+     * Classifies a prompt using hybrid semantic + keyword scoring
      * @param prompt The input prompt to classify
      * @returns PromptCategory with type and confidence score
      */
-    static classifyPrompt(prompt: string): PromptCategory {
+    static async classifyPrompt(prompt: string): Promise<PromptCategory> {
+        try {
+            logger.debug(`Classifying prompt with hybrid approach (${prompt.length} chars)`)
+            
+            // Run both semantic and keyword classification in parallel
+            const [semanticResult, keywordResult] = await Promise.allSettled([
+                this.performSemanticClassification(prompt),
+                Promise.resolve(this.performKeywordClassification(prompt))
+            ])
+            
+            // Handle results and fallback logic
+            return this.combineClassificationResults(
+                semanticResult,
+                keywordResult,
+                prompt
+            )
+            
+        } catch (error) {
+            logger.error('Hybrid classification failed, using fallback:', error)
+            return this.performKeywordClassification(prompt)
+        }
+    }
+
+    /**
+     * Legacy synchronous method for backward compatibility
+     * Now uses keyword-only classification as fallback
+     */
+    static classifyPromptSync(prompt: string): PromptCategory {
+        logger.debug('Using synchronous keyword-only classification')
+        return this.performKeywordClassification(prompt)
+    }
+
+    /**
+     * Perform semantic classification
+     */
+    private static async performSemanticClassification(prompt: string): Promise<PromptCategory> {
+        const result = await semanticClassifier.classifyPrompt(prompt)
+        logger.debug(`Semantic classification: ${result.category.type} (${result.category.confidence.toFixed(3)})`)
+        return result.category
+    }
+
+    /**
+     * Perform keyword-based classification (original logic)
+     */
+    private static performKeywordClassification(prompt: string): PromptCategory {
         const lowerPrompt = prompt.toLowerCase()
         
         // Calculate scores for all categories
@@ -70,7 +128,7 @@ export class PromptClassifier {
         
         // If no significant matches found, return general
         if (maxScore === 0) {
-            return { type: PromptType.General, confidence: 0.6 }
+            return { type: PromptType.General, confidence: HYBRID_SCORING.FALLBACK_CONFIDENCE }
         }
         
         // Find the winning category - guaranteed to exist since maxScore > 0
@@ -79,7 +137,7 @@ export class PromptClassifier {
         
         // Calculate confidence based on score strength and uniqueness
         const totalScore = Object.values(scores).reduce((sum, score) => sum + score, 0)
-        const confidence = this.calculateConfidence(maxScore, totalScore)
+        const confidence = this.calculateKeywordConfidence(maxScore, totalScore)
         
         // Map category names to PromptType
         const categoryMap: Record<string, PromptType> = {
@@ -90,13 +148,97 @@ export class PromptClassifier {
             conversational: PromptType.Conversational
         }
         
-        if (!winningCategory || !(winningCategory in categoryMap)) {
-            return { type: PromptType.General, confidence: 0.6 }
-        }
-        
-        return {
+        const result = {
             type: categoryMap[winningCategory] || PromptType.General,
             confidence
+        }
+        
+        logger.debug(`Keyword classification: ${result.type} (${result.confidence.toFixed(3)})`)
+        return result
+    }
+
+    /**
+     * Combine semantic and keyword classification results with weighted scoring
+     */
+    private static combineClassificationResults(
+        semanticResult: PromiseSettledResult<PromptCategory>,
+        keywordResult: PromiseSettledResult<PromptCategory>,
+        prompt: string
+    ): PromptCategory {
+        // Extract results, handling failures
+        const semantic = semanticResult.status === 'fulfilled' ? semanticResult.value : null
+        const keyword = keywordResult.status === 'fulfilled' ? keywordResult.value : null
+        
+        // If both failed, return general category
+        if (!semantic && !keyword) {
+            logger.warn('Both semantic and keyword classification failed')
+            return { type: PromptType.General, confidence: HYBRID_SCORING.FALLBACK_CONFIDENCE }
+        }
+        
+        // If only keyword succeeded, use it
+        if (!semantic && keyword) {
+            logger.debug('Using keyword-only result (semantic failed)')
+            return keyword
+        }
+        
+        // If only semantic succeeded, use it
+        if (semantic && !keyword) {
+            logger.debug('Using semantic-only result (keyword failed)')
+            return semantic
+        }
+        
+        // Both succeeded - combine using weighted scoring
+        return this.calculateHybridScore(semantic!, keyword!)
+    }
+
+    /**
+     * Calculate hybrid score combining semantic and keyword results
+     */
+    private static calculateHybridScore(
+        semantic: PromptCategory,
+        keyword: PromptCategory
+    ): PromptCategory {
+        // If both methods agree on category, increase confidence
+        if (semantic.type === keyword.type) {
+            const combinedConfidence = Math.min(
+                (semantic.confidence * HYBRID_SCORING.SEMANTIC_WEIGHT) + 
+                (keyword.confidence * HYBRID_SCORING.KEYWORD_WEIGHT) + 0.1, // Bonus for agreement
+                0.95
+            )
+            
+            logger.debug(`Methods agree on ${semantic.type}, combined confidence: ${combinedConfidence.toFixed(3)}`)
+            return {
+                type: semantic.type,
+                confidence: combinedConfidence
+            }
+        }
+        
+        // Methods disagree - use weighted scoring to decide
+        const semanticScore = semantic.confidence * HYBRID_SCORING.SEMANTIC_WEIGHT
+        const keywordScore = keyword.confidence * HYBRID_SCORING.KEYWORD_WEIGHT
+        
+        if (semanticScore >= keywordScore) {
+            const adjustedConfidence = Math.max(
+                semanticScore,
+                HYBRID_SCORING.MIN_COMBINED_CONFIDENCE
+            )
+            
+            logger.debug(`Semantic wins: ${semantic.type} (${semanticScore.toFixed(3)}) vs keyword: ${keyword.type} (${keywordScore.toFixed(3)})`)
+            return {
+                type: semantic.type,
+                confidence: adjustedConfidence
+            }
+        } else {
+            const adjustedConfidence = Math.max(
+                keywordScore,
+                HYBRID_SCORING.MIN_COMBINED_CONFIDENCE
+            )
+            
+            logger.debug(`Keyword wins: ${keyword.type} (${keywordScore.toFixed(3)}) vs semantic: ${semantic.type} (${semanticScore.toFixed(3)})`)
+            return {
+                type: keyword.type,
+                confidence: adjustedConfidence
+            }
         }
     }
     
@@ -130,13 +272,13 @@ export class PromptClassifier {
     }
     
     /**
-     * Calculates confidence score based on winning score strength and uniqueness
+     * Calculates confidence score for keyword classification
      * @param maxScore Highest category score
      * @param totalScore Sum of all category scores
-     * @returns Confidence value between 0 and 1
+     * @returns Confidence value beatween 0 and 1
      */
-    private static calculateConfidence(maxScore: number, totalScore: number): number {
-        if (totalScore === 0) return 0.6 // Default confidence for general category
+    private static calculateKeywordConfidence(maxScore: number, totalScore: number): number {
+        if (totalScore === 0) return HYBRID_SCORING.FALLBACK_CONFIDENCE
         
         // Base confidence from score strength (normalized)
         const scoreStrength = Math.min(maxScore / 10, 1) // Cap at 1.0
