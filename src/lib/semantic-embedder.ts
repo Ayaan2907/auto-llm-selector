@@ -1,4 +1,5 @@
-import * as tf from '@tensorflow/tfjs-node';
+import '@tensorflow/tfjs-node';
+import * as use from '@tensorflow-models/universal-sentence-encoder';
 import { Logger } from '../utils/logger.js';
 import { embeddingCache } from '../cache.js';
 
@@ -9,7 +10,7 @@ const logger = new Logger('SemanticEmbedder');
  * Provides text embeddings and similarity calculations for semantic classification
  */
 export class SemanticEmbedder {
-  private model: tf.GraphModel | null = null;
+  private model: use.UniversalSentenceEncoder | null = null;
   private isLoading = false;
   private loadingPromise: Promise<void> | null = null;
 
@@ -45,10 +46,8 @@ export class SemanticEmbedder {
     try {
       logger.info('Loading Universal Sentence Encoder model...');
 
-      // Load the model from TensorFlow Hub
-      // Note: For USE, we need to use tf.loadGraphModel instead of loadLayersModel
-      const modelUrl = 'https://tfhub.dev/google/universal-sentence-encoder/4';
-      this.model = await tf.loadGraphModel(modelUrl, { fromTFHub: true });
+      // Load the model using the official API
+      this.model = await use.load();
 
       logger.info('Universal Sentence Encoder model loaded successfully');
     } catch (error) {
@@ -183,21 +182,20 @@ export class SemanticEmbedder {
    */
   private async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Convert text to tensor (USE expects 1D string tensor)
-      const textTensor = tf.tensor([text], [1], 'string');
+      if (!this.model) {
+        throw new Error('Model not loaded');
+      }
 
-      // Generate embedding using the model
+      // Use the official API to generate embeddings
+      const embeddings = await this.model.embed([text]);
 
-      const embeddingTensor = this.model!.predict(textTensor) as tf.Tensor;
+      // Get the first (and only) embedding as array
+      const embeddingData = await embeddings.data();
 
-      // Convert to array and flatten if needed
-      const embedding = await embeddingTensor.data();
+      // Cleanup tensor
+      embeddings.dispose();
 
-      // Cleanup tensors
-      textTensor.dispose();
-      embeddingTensor.dispose();
-
-      return Array.from(embedding);
+      return Array.from(embeddingData);
     } catch (error) {
       logger.error('Error in generateEmbedding:', error);
       throw error;
@@ -216,7 +214,8 @@ export class SemanticEmbedder {
    */
   dispose(): void {
     if (this.model) {
-      this.model.dispose();
+      // The official USE model doesn't have a dispose method
+      // Memory will be managed by TensorFlow.js garbage collection
       this.model = null;
       logger.info('Semantic embedding model disposed');
     }
