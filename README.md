@@ -113,7 +113,7 @@ The magic happens in a few steps:
 
 1. **Understanding Your Prompt**: The system reads your prompt and figures out what category it falls into - is this a coding question? Creative writing? Data analysis? It uses both AI embeddings and keyword matching to be really accurate.
 
-2. **Knowing the Models**: We've tested and profiled over 80 different AI models. Each one gets scored on things like:
+2. **Knowing the Models**: We've tested and profiled over many different AI models. Each one gets scored on things like:
    - How good is it at coding vs creative tasks?
    - How fast does it respond?
    - How much does it cost?
@@ -121,7 +121,7 @@ The magic happens in a few steps:
 
 3. **Making the Choice**: An AI looks at your prompt, your requirements, and all the model profiles, then picks the best match. It even explains why it made that choice.
 
-4. **Learning Over Time**: The system gets smarter as it sees more examples of what works well.
+4. **Learning Over Time**: The system gets smarter as it sees more examples of what works well. // TODO: NOT YET FULLY IMPLEMENTED
 
 ## What You Get Back
 
@@ -208,6 +208,17 @@ npm run typecheck
 npm run format
 ```
 
+## Troubleshooting
+
+### TensorFlow Dependencies
+
+If you encounter TensorFlow-related errors:
+
+```bash
+npm uninstall @tensorflow/tfjs-node @tensorflow-models/universal-sentence-encoder
+npm install @tensorflow/tfjs-node @tensorflow-models/universal-sentence-encoder
+```
+
 ## Performance & Analytics
 
 - **Classification Speed**: ~100-300ms for hybrid semantic + keyword analysis
@@ -217,13 +228,15 @@ npm run format
 
 ## Supported Models
 
-The router includes curated profiles for popular models from:
+The router includes pre-curated profiles for popular models from:
 
 - **OpenAI**: GPT-4, GPT-4-Turbo, GPT-4o, GPT-3.5-Turbo
 - **Anthropic**: Claude-3 (Opus, Sonnet, Haiku)
 - **Google**: Gemini Pro, Gemini Flash
 - **Meta**: Llama 3.1 (405B, 70B, 8B)
 - **Open Source**: Mixtral, Wizard, and many more
+
+Apart from these everytime we initialize the library new models are fetched from OpenRouter API and cached for optimal performance.
 
 ## Contributing
 
@@ -232,3 +245,7 @@ Found a bug? Have an idea? Pull requests welcome! This is an open source project
 ## License
 
 MIT © Ayaan Kaifullah
+
+## Keywords
+
+Auto Prompt Router To LLM,
