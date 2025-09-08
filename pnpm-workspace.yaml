@@ -1,0 +1,6 @@
+ignoredBuiltDependencies:
+  - core-js
+  - esbuild
+
+onlyBuiltDependencies:
+  - '@tensorflow/tfjs-node'
