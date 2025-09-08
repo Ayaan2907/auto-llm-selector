@@ -35,7 +35,6 @@ import {
 // Set up the router
 const router = new AutoPromptRouter({
   OPEN_ROUTER_API_KEY: 'your-api-key', // Get one from openrouter.ai
-  enableLogging: true, // See what's happening under the hood
 });
 
 await router.initialize();
@@ -182,7 +181,6 @@ import {
 const config: RouterConfig = {
   OPEN_ROUTER_API_KEY: 'your-key', // Required
   selectorModel: 'anthropic/claude-3-sonnet', // Optional: which model makes the selection
-  enableLogging: true, // Optional: see detailed logs
 };
 ```
 
@@ -206,6 +204,15 @@ npm run dev
 npm run lint
 npm run typecheck
 npm run format
+```
+
+## Environment Variables
+
+Create a `.env` file and add the following:
+
+```text
+OPEN_ROUTER_API_KEY=your-key
+NODE_ENV=development
 ```
 
 ## Troubleshooting

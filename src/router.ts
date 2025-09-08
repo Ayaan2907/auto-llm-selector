@@ -17,7 +17,6 @@ export class AutoPromptRouter {
   constructor(config: RouterConfig) {
     this.config = {
       selectorModel: 'openai/gpt-oss-20b:free',
-      enableLogging: false,
       ...config,
     };
 
