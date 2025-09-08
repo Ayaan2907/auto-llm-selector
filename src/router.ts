@@ -17,7 +17,6 @@ export class AutoPromptRouter {
   constructor(config: RouterConfig) {
     this.config = {
       selectorModel: 'openai/gpt-oss-20b:free',
-      enableLogging: false,
       ...config,
     };
 
@@ -70,14 +69,21 @@ export class AutoPromptRouter {
         `Retrieved ${allProfiles.length} model profiles from cache`
       );
 
-      // Step 2: Filter by reasoning requirement ONLY (if needed)
+      // Step 2: Filter by reasoning requirement
       let availableProfiles = allProfiles;
-      if (properties.reasoning) {
+      if (properties.reasoning === true) {
         availableProfiles = allProfiles.filter(
           profile => profile.characteristics.isReasoning
         );
         this.logger.debug(
           `Filtered to ${availableProfiles.length} reasoning-capable models`
+        );
+      } else if (properties.reasoning === false) {
+        availableProfiles = allProfiles.filter(
+          profile => !profile.characteristics.isReasoning
+        );
+        this.logger.debug(
+          `Filtered to ${availableProfiles.length} non-reasoning models`
         );
       }
 
@@ -179,7 +185,7 @@ PROMPT ANALYSIS:
 
 USER REQUIREMENTS:
 - Accuracy Priority: ${properties.accuracy}/1 (1 = highest accuracy needed)
-- Cost Sensitivity: ${properties.cost}/1 (0 = very cost-sensitive, 1 = cost no object)
+- Cost Sensitivity: ${properties.cost}/1 (1 = very cost-sensitive, 0 = cost no object)
 - Speed Priority: ${properties.speed}/1 (1 = fastest response needed)
 - Context Length: ${properties.tokenLimit} tokens minimum
 - Reasoning Required: ${properties.reasoning}

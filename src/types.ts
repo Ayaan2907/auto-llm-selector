@@ -12,7 +12,6 @@ export interface RouterConfig {
   OPEN_ROUTER_API_KEY: string;
   // preferredProvider?: string  // e.g., "openai", "anthropic", "meta-llama"
   selectorModel?: string; // LLM model to use for selection decisions
-  enableLogging?: boolean;
 }
 
 export interface ModelSelection {
