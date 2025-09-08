@@ -13,7 +13,9 @@ async function testAutoPromptRouter() {
   const config: RouterConfig = {
     OPEN_ROUTER_API_KEY: '',
     selectorModel: 'openai/gpt-oss-20b:free',
-    enableLogging: true,
+    // Example provider filtering (uncomment to test):
+    // allowedProviders: ['openai', 'anthropic'], // Only use OpenAI and Anthropic models
+    // blockedProviders: ['meta-llama'], // Exclude Meta Llama models
   };
 
   try {

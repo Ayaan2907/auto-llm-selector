@@ -10,8 +10,9 @@ export interface PromptProperties {
 
 export interface RouterConfig {
   OPEN_ROUTER_API_KEY: string;
-  // preferredProvider?: string  // e.g., "openai", "anthropic", "meta-llama"
   selectorModel?: string; // LLM model to use for selection decisions
+  allowedProviders?: string[]; // If specified, only include models from these providers (whitelist)
+  blockedProviders?: string[]; // If specified, exclude models from these providers (blacklist)
 }
 
 export interface ModelSelection {

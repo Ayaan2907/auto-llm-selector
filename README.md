@@ -56,6 +56,29 @@ console.log(`Why: ${result.reason}`);
 // Might output: "Selected GPT-4 for its excellent coding capabilities and reasoning skills"
 ```
 
+### Provider Filtering Example
+
+```typescript
+// Only use premium providers (OpenAI and Anthropic)
+const premiumRouter = new AutoPromptRouter({
+  OPEN_ROUTER_API_KEY: 'your-api-key',
+  allowedProviders: ['openai', 'anthropic'],
+});
+
+// Avoid expensive models by blocking certain providers
+const budgetRouter = new AutoPromptRouter({
+  OPEN_ROUTER_API_KEY: 'your-api-key',
+  blockedProviders: ['openai'], // Skip OpenAI's premium models
+});
+
+await premiumRouter.initialize();
+const premiumRecommendation = await premiumRouter.getModelRecommendation(
+  'Write complex business logic in Python',
+  { accuracy: 0.95, cost: 0.8, speed: 0.6, tokenLimit: 5000, reasoning: true }
+);
+// Will only consider OpenAI and Anthropic models
+```
+
 ## Real-World Examples
 
 ### When You Need Help Coding
@@ -181,7 +204,35 @@ import {
 const config: RouterConfig = {
   OPEN_ROUTER_API_KEY: 'your-key', // Required
   selectorModel: 'anthropic/claude-3-sonnet', // Optional: which model makes the selection
+  allowedProviders: ['openai', 'anthropic'], // Optional: whitelist specific providers
+  blockedProviders: ['meta-llama'], // Optional: blacklist specific providers
 };
+```
+
+### Provider Filtering
+
+Control which AI providers can be used for model selection:
+
+- **`allowedProviders`**: Array of provider names to include (whitelist approach)
+- **`blockedProviders`**: Array of provider names to exclude (blacklist approach)
+
+**Provider Names**: Common providers include `openai`, `anthropic`, `google`, `meta-llama`, `microsoft`, `gryphe`, `nousresearch`
+
+**Priority**: If both `allowedProviders` and `blockedProviders` are specified, `allowedProviders` takes precedence.
+
+**Examples**:
+```typescript
+// Only use OpenAI models
+{ allowedProviders: ['openai'] }
+
+// Use any provider except Meta Llama
+{ blockedProviders: ['meta-llama'] }
+
+// Use only premium providers
+{ allowedProviders: ['openai', 'anthropic', 'google'] }
+
+// Avoid free/community models
+{ blockedProviders: ['gryphe', 'nousresearch'] }
 ```
 
 ## Requirements

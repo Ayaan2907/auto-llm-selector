@@ -69,8 +69,13 @@ export class AutoPromptRouter {
         `Retrieved ${allProfiles.length} model profiles from cache`
       );
 
-      // Step 2: Filter by reasoning requirement
-      let availableProfiles = allProfiles;
+      // Step 2: Filter by provider preferences
+      let availableProfiles = this.filterModelsByProviderPreferences(allProfiles);
+      this.logger.debug(
+        `After provider filtering: ${availableProfiles.length} models available`
+      );
+
+      // Step 3: Filter by reasoning requirement
       if (properties.reasoning === true) {
         availableProfiles = allProfiles.filter(
           profile => profile.characteristics.isReasoning
@@ -87,13 +92,13 @@ export class AutoPromptRouter {
         );
       }
 
-      // Step 3: Process prompt through classifier → ML → Category
+      // Step 4: Process prompt through classifier → ML → Category
       const category = await this.classifyPrompt(prompt);
       this.logger.info(
         `Prompt classified as: ${category.type} (confidence: ${category.confidence.toFixed(2)})`
       );
 
-      // Step 4: Filter profiles by category capability
+      // Step 5: Filter profiles by category capability
       const categoryKey =
         category.type.toLowerCase() as keyof ModelProfile['capabilities'];
       const categoryProfiles = availableProfiles.filter(
@@ -109,7 +114,7 @@ export class AutoPromptRouter {
         );
       }
 
-      // Step 5: Pass to LLM decision with profiles
+      // Step 6: Pass to LLM decision with profiles
       const finalSelection = await this.getLLMDecisionWithProfiles(
         prompt,
         properties,
@@ -141,6 +146,51 @@ export class AutoPromptRouter {
   }
 
   // Private methods
+  private filterModelsByProviderPreferences(profiles: ModelProfile[]): ModelProfile[] {
+    const { allowedProviders, blockedProviders } = this.config;
+    
+    // If no provider preferences are specified, return all profiles
+    if (!allowedProviders && !blockedProviders) {
+      return profiles;
+    }
+
+    let filteredProfiles = profiles;
+
+    // Apply allowed providers filter (whitelist) - takes precedence
+    if (allowedProviders && allowedProviders.length > 0) {
+      const normalizedAllowed = allowedProviders.map(p => p.toLowerCase());
+      filteredProfiles = profiles.filter(profile => 
+        normalizedAllowed.includes(profile.characteristics.provider.toLowerCase())
+      );
+      this.logger.debug(
+        `Filtered to allowed providers [${allowedProviders.join(', ')}]: ${filteredProfiles.length} models`
+      );
+    }
+    // Apply blocked providers filter (blacklist) - only if allowedProviders is not specified
+    else if (blockedProviders && blockedProviders.length > 0) {
+      const normalizedBlocked = blockedProviders.map(p => p.toLowerCase());
+      filteredProfiles = profiles.filter(profile => 
+        !normalizedBlocked.includes(profile.characteristics.provider.toLowerCase())
+      );
+      this.logger.debug(
+        `Filtered out blocked providers [${blockedProviders.join(', ')}]: ${filteredProfiles.length} models remaining`
+      );
+    }
+
+    // Validate that we still have models available
+    if (filteredProfiles.length === 0) {
+      const availableProviders = [...new Set(profiles.map(p => p.characteristics.provider))];
+      this.logger.warn(
+        `Provider filtering resulted in no available models. Available providers: [${availableProviders.join(', ')}]`
+      );
+      throw new Error(
+        `No models available after applying provider preferences. Available providers: ${availableProviders.join(', ')}`
+      );
+    }
+
+    return filteredProfiles;
+  }
+
   private async classifyPrompt(prompt: string): Promise<PromptCategory> {
     return await PromptClassifier.classifyPrompt(prompt);
   }

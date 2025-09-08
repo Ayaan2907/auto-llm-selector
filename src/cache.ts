@@ -42,6 +42,8 @@ class InMemoryModelCache {
       maxCost?: number;
       minSpeed?: 'ultra-fast' | 'fast' | 'medium' | 'slow';
       minAccuracy?: 'basic' | 'good' | 'high' | 'excellent';
+      allowedProviders?: string[];
+      blockedProviders?: string[];
     }
   ): Promise<ModelProfile[]> {
     const profiles = await this.getModelProfiles();
@@ -52,6 +54,19 @@ class InMemoryModelCache {
       .filter(profile => {
         // Basic capability threshold
         if (profile.capabilities[categoryKey] < 0.3) return false;
+
+        // Provider filtering
+        if (requirements?.allowedProviders && requirements.allowedProviders.length > 0) {
+          const normalizedAllowed = requirements.allowedProviders.map(p => p.toLowerCase());
+          if (!normalizedAllowed.includes(profile.characteristics.provider.toLowerCase())) {
+            return false;
+          }
+        } else if (requirements?.blockedProviders && requirements.blockedProviders.length > 0) {
+          const normalizedBlocked = requirements.blockedProviders.map(p => p.toLowerCase());
+          if (normalizedBlocked.includes(profile.characteristics.provider.toLowerCase())) {
+            return false;
+          }
+        }
 
         // Requirements filtering
         if (
