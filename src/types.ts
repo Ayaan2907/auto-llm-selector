@@ -139,6 +139,7 @@ export interface AnalyticsEvent {
   timestamp: number;
   sessionId: string;
   libraryVersion: string;
+  g;
   data: Record<string, any>;
 }
 
