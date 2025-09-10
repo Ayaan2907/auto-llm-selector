@@ -8,11 +8,23 @@ export interface PromptProperties {
   reasoning: boolean; // Whether complex reasoning is required
 }
 
+export interface AnalyticsConfig {
+  enabled: boolean; // Master switch - MUST be explicitly enabled
+  collectPromptMetrics: boolean; // Prompt classification, features (hashed only)
+  collectModelPerformance: boolean; // Model selection, confidence, response times
+  collectSemanticFeatures: boolean; // Embedding metrics, classification data
+  collectSystemInfo: boolean; // Platform, Node version (anonymized)
+  batchSize?: number; // Events per batch upload (default: 50)
+  batchIntervalMs?: number; // Max time before batch upload (default: 5000)
+  debugMode?: boolean; // Verbose analytics logging (default: false)
+}
+
 export interface RouterConfig {
   OPEN_ROUTER_API_KEY: string;
   // preferredProvider?: string  // e.g., "openai", "anthropic", "meta-llama"
   selectorModel?: string; // LLM model to use for selection decisions
   enableLogging?: boolean;
+  analytics?: AnalyticsConfig; // Optional analytics configuration
 }
 
 export interface ModelSelection {
@@ -119,4 +131,30 @@ export interface CategoryModelRanking {
     score: number;
     reasoning: string;
   }[];
+}
+
+// Analytics event interfaces
+export interface AnalyticsEvent {
+  eventType: string;
+  timestamp: number;
+  sessionId: string;
+  libraryVersion: string;
+  data: Record<string, any>;
+}
+
+export interface PromptAnalyticsData {
+  promptHash: string;
+  promptLength: number;
+  promptType: PromptType;
+  classificationConfidence: number;
+  semanticConfidence?: number;
+  keywordConfidence?: number;
+  modelSelected: string;
+  selectionConfidence: number;
+  responseTimeMs: number;
+  systemInfo?: {
+    platform: string;
+    nodeVersion: string;
+    libraryVersion: string;
+  };
 }
