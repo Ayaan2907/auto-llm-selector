@@ -1,19 +1,38 @@
-// simply run npx tsx sample.ts and check the output
+// simply install the package,
+// copy the file content
+//touch sample.ts
+// pass api key and run
+// npx tsx sample.ts and check the output for quick understanding
+
+// import {
+//   AutoPromptRouter,
+//   type RouterConfig,
+//   type PromptProperties,
+// } from './src/index.js';
 
 import {
   AutoPromptRouter,
   type RouterConfig,
   type PromptProperties,
-} from './src/index.js';
+} from 'auto-prompt-router';
 
 async function testAutoPromptRouter() {
   console.log('🚀 Testing Auto Prompt Router...\n');
 
-  // Configuration
   const config: RouterConfig = {
     OPEN_ROUTER_API_KEY: '',
     selectorModel: 'openai/gpt-oss-20b:free',
     enableLogging: true,
+    analytics: {
+      enabled: true,
+      collectPromptMetrics: true,
+      collectModelPerformance: true,
+      collectSemanticFeatures: true,
+      collectSystemInfo: true,
+      batchSize: 3, // Small batch for testing
+      batchIntervalMs: 3000, // 3 seconds for testing
+      debugMode: true, // Verbose analytics logging
+    },
   };
 
   try {
@@ -22,6 +41,9 @@ async function testAutoPromptRouter() {
     const router = new AutoPromptRouter(config);
     await router.initialize();
     console.log('✅ Router initialized successfully\n');
+
+    // Check analytics status
+    console.log('📊 Analytics Status:', router.getAnalyticsStatus());
 
     // Test model profiles loading
     console.log('🔧 Loading model profiles...');
@@ -141,15 +163,16 @@ async function testAutoPromptRouter() {
       }
     }
 
-    // Test available models
-    // console.log('📋 Available Models:');
-    // const availableModels = await router.getAvailableModels();
-    // console.log(`Found ${availableModels.length} models`);
+    // Wait for analytics to flush
+    console.log('⏳ Waiting 4 seconds for analytics to flush...');
+    await new Promise(resolve => setTimeout(resolve, 4000));
 
-    // // Show first 5 models as sample
-    // availableModels.slice(0, 5).forEach(model => {
-    //     console.log(`- ${model.id}: ${model.name} (Context: ${model.contextLength}, Provider: ${model.provider})`);
-    // });
+    console.log('📊 Final Analytics Status:', router.getAnalyticsStatus());
+
+    // Graceful shutdown
+    console.log('🔄 Shutting down router...');
+    await router.shutdown();
+    console.log('✅ Router shut down - analytics flushed to Supabase');
   } catch (error) {
     console.error('❌ Test failed:', error);
 

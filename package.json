@@ -1,6 +1,6 @@
 {
   "name": "auto-llm-selector",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Auto Prompt Router To LLM",
   "type": "module",
   "main": "dist/index.js",

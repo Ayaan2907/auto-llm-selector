@@ -18,7 +18,7 @@ This router solves that problem by:
 ## Installation
 
 ```bash
-npm install auto-prompt-router-to-llm
+npm install auto-llm-selector
 ```
 
 ## Quick Example
@@ -30,7 +30,7 @@ import {
   AutoPromptRouter,
   type RouterConfig,
   type PromptProperties,
-} from 'auto-prompt-router-to-llm';
+} from 'auto-llm-selector';
 
 // Set up the router
 const router = new AutoPromptRouter({
@@ -164,7 +164,7 @@ import {
 
   // Enums
   PromptType, // Available categories: coding, creative, analytical, etc.
-} from 'auto-prompt-router-to-llm';
+} from 'auto-llm-selector';
 ```
 
 **Most users only need**: `AutoPromptRouter`, `RouterConfig`, `PromptProperties`, and `ModelSelection`.
@@ -172,7 +172,7 @@ import {
 ## Getting Started
 
 1. **Get an API Key**: Sign up at [OpenRouter.ai](https://openrouter.ai) - they provide access to all the major AI models through one API
-2. **Install the package**: `npm install auto-prompt-router-to-llm`
+2. **Install the package**: `npm install auto-llm-selector`
 3. **Try the examples** above to see how it works
 4. **Check out the full API docs** in the `/docs` folder
 
@@ -187,7 +187,7 @@ const config: RouterConfig = {
   // Optional: Privacy-first analytics (opt-in)
   analytics: {
     enabled: true, // Must be explicitly enabled
-    collectPromptMetrics: true, // Prompt classification & model selection (hashed prompts only)
+    collectPromptMetrics: true, // Prompt classification & model selection (COLLECTING RAW PROMPTS FOR TESTING PURPOSES, WILL BE REVERTED TO HASH SHORTLY)
     collectModelPerformance: true, // Model response times & success rates
     collectSemanticFeatures: true, // Classification confidence & embedding metrics
     collectSystemInfo: true, // Anonymized platform info (Node version, OS)
