@@ -8,6 +8,7 @@ const envSchema = z.object({
   OPEN_ROUTER_API_KEY: z.string(),
   MODEL_SELECTOR_MODEL: z.string().default('openai/gpt-oss-20b:free'),
   NODE_ENV: z.string().default('development'),
+  SUPABASE_ANALYTICS_ENDPOINT: z.string(),
 });
 
 // Function to validate environment variables
@@ -18,6 +19,7 @@ const validateEnv = () => {
       OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY,
       MODEL_SELECTOR_MODEL: process.env.MODEL_SELECTOR_MODEL,
       NODE_ENV: process.env.NODE_ENV,
+      SUPABASE_ANALYTICS_ENDPOINT: process.env.SUPABASE_ANALYTICS_ENDPOINT,
     };
     const parsed = envSchema.parse(env);
     logger.info('Environment variables validated successfully');

@@ -2,13 +2,11 @@
 import type { AnalyticsEvent, AnalyticsConfig } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { AnalyticsUtils } from './utils.js';
+import { env } from '../config/env.js';
 
 const logger = new Logger('AnalyticsQueue');
 
-// Supabase configuration (anon key with RLS - safe to expose)
-const SUPABASE_URL = 'https://ucgblchamfvkillrznhk.supabase.co';
-const SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVjZ2JsY2hhbWZ2a2lsbHJ6bmhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NjkzMDgsImV4cCI6MjA3MzA0NTMwOH0.xuXYjGGXjiNQ2uJGDtBh_Q4ucrV30KTzA3q-QpBWrrU';
+const SUPABASE_ANALYTICS_ENDPOINT = env.SUPABASE_ANALYTICS_ENDPOINT;
 
 export class AnalyticsQueue {
   private queue: AnalyticsEvent[] = [];
@@ -126,15 +124,16 @@ export class AnalyticsQueue {
    * Send analytics batch to Supabase backend
    */
   private async sendAnalyticsBatch(events: AnalyticsEvent[]): Promise<void> {
-    // Convert camelCase to snake_case for Supabase
-    const payload = events.map(event => ({
-      event_type: event.eventType,
-      timestamp: event.timestamp,
-      session_id: event.sessionId,
-      library_version: event.libraryVersion,
-      data: event.data,
-      user_fingerprint: this.userFingerprint,
-    }));
+    const payload = {
+      events: events.map(event => ({
+        event_type: event.eventType,
+        timestamp: event.timestamp,
+        session_id: event.sessionId,
+        library_version: event.libraryVersion,
+        data: event.data,
+        user_fingerprint: this.userFingerprint,
+      })),
+    };
 
     if (this.config.debugMode) {
       logger.debug(
@@ -143,13 +142,10 @@ export class AnalyticsQueue {
       );
     }
 
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/analytics_events`, {
+    const response = await fetch(SUPABASE_ANALYTICS_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: 'return=minimal',
       },
       body: JSON.stringify(payload),
     });
@@ -157,10 +153,11 @@ export class AnalyticsQueue {
     if (!response.ok) {
       const errorBody = await response.text();
       if (this.config.debugMode) {
-        logger.error('Supabase error details:', errorBody);
+        logger.error('Edge function error details:', errorBody);
       }
       throw new Error(
-        `Analytics upload failed: ${response.status} ${response.statusText} - ${errorBody}`
+        `Analytics upload failed: ${response.status} ${response.statusText} - 
+${errorBody}`
       );
     }
   }
