@@ -1,5 +1,5 @@
 import { Logger } from './utils/logger.js';
-import { modelCache } from './cache.js';
+import { InMemoryModelCache } from './cache.js';
 import { PromptClassifier } from './classifier.js';
 import { AnalyticsCollector } from './analytics/collector.js';
 import type {
@@ -15,6 +15,7 @@ export class AutoPromptRouter {
   private config: RouterConfig;
   private isInitialized: boolean = false;
   private analytics: AnalyticsCollector | null = null;
+  private modelCache: InMemoryModelCache;
 
   constructor(config: RouterConfig) {
     this.config = {
@@ -24,13 +25,13 @@ export class AutoPromptRouter {
 
     this.logger = new Logger('AutoPromptRouter');
 
+    // Initialize model cache with API key
+    this.modelCache = new InMemoryModelCache(this.config.OPEN_ROUTER_API_KEY);
+
     // Initialize analytics if enabled
     if (this.config.analytics?.enabled) {
       this.analytics = new AnalyticsCollector(this.config.analytics);
     }
-
-    // Set environment variables for cache to use
-    process.env.OPEN_ROUTER_API_KEY = this.config.OPEN_ROUTER_API_KEY;
   }
 
   /**
@@ -43,7 +44,7 @@ export class AutoPromptRouter {
       this.logger.info('Initializing AutoPromptRouter');
 
       // Pre-fetch and cache model profiles
-      const modelProfiles = await modelCache.getModelProfiles();
+      const modelProfiles = await this.modelCache.getModelProfiles();
 
       this.isInitialized = true;
       this.logger.info('AutoPromptRouter initialized successfully');
@@ -94,7 +95,7 @@ export class AutoPromptRouter {
 
     try {
       // Step 1: Get all model profiles from cache
-      const allProfiles = await modelCache.getModelProfiles();
+      const allProfiles = await this.modelCache.getModelProfiles();
       this.logger.debug(
         `Retrieved ${allProfiles.length} model profiles from cache`
       );
@@ -182,14 +183,14 @@ export class AutoPromptRouter {
    * Get available models (for debugging/inspection)
    */
   async getAvailableModels(): Promise<ModelProfile[]> {
-    return await modelCache.getModelProfiles();
+    return await this.modelCache.getModelProfiles();
   }
 
   /**
    * Clear model cache
    */
   clearCache(): void {
-    modelCache.clearCache();
+    this.modelCache.clearCache();
     this.logger.info('Model cache cleared');
   }
 
