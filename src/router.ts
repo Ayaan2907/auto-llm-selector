@@ -1,6 +1,7 @@
 import { Logger } from './utils/logger.js';
 import { modelCache } from './cache.js';
 import { PromptClassifier } from './classifier.js';
+import { AnalyticsCollector } from './analytics/collector.js';
 import type {
   RouterConfig,
   PromptProperties,
@@ -13,6 +14,7 @@ export class AutoPromptRouter {
   private logger: Logger;
   private config: RouterConfig;
   private isInitialized: boolean = false;
+  private analytics: AnalyticsCollector | null = null;
 
   constructor(config: RouterConfig) {
     this.config = {
@@ -23,6 +25,11 @@ export class AutoPromptRouter {
 
     this.logger = new Logger('AutoPromptRouter');
 
+    // Initialize analytics if enabled
+    if (this.config.analytics?.enabled) {
+      this.analytics = new AnalyticsCollector(this.config.analytics);
+    }
+
     // Set environment variables for cache to use
     process.env.OPEN_ROUTER_API_KEY = this.config.OPEN_ROUTER_API_KEY;
   }
@@ -31,15 +38,36 @@ export class AutoPromptRouter {
    * Initialize the router by fetching and caching model data
    */
   async initialize(): Promise<void> {
+    const startTime = Date.now();
+
     try {
       this.logger.info('Initializing AutoPromptRouter');
 
       // Pre-fetch and cache model profiles
-      await modelCache.getModelProfiles();
+      const modelProfiles = await modelCache.getModelProfiles();
 
       this.isInitialized = true;
       this.logger.info('AutoPromptRouter initialized successfully');
+
+      // Track session start (includes system info)
+      if (this.analytics) {
+        this.analytics.trackSessionStart({
+          configOptions: { ...this.config },
+          initializationTimeMs: Date.now() - startTime,
+          modelCacheSize: modelProfiles.length,
+        });
+      }
     } catch (error) {
+      // Track initialization error
+      if (this.analytics) {
+        this.analytics.trackError({
+          errorType: 'initialization_failed',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error',
+          context: 'router_initialize',
+        });
+      }
+
       this.logger.error('Failed to initialize AutoPromptRouter', error);
       throw new Error(
         'Failed to initialize router. Please check your OpenRouter API key.'
@@ -54,6 +82,8 @@ export class AutoPromptRouter {
     prompt: string,
     properties: PromptProperties
   ): Promise<ModelSelection> {
+    const startTime = Date.now();
+
     if (!this.isInitialized) {
       throw new Error('Router not initialized. Call initialize() first.');
     }
@@ -111,9 +141,32 @@ export class AutoPromptRouter {
         category
       );
 
+      const responseTime = Date.now() - startTime;
+
+      // Track complete prompt request
+      if (this.analytics) {
+        this.analytics.trackPromptRequest({
+          prompt,
+          promptProperties: { ...properties },
+          classification: category,
+          modelSelection: finalSelection,
+          responseTimeMs: responseTime,
+        });
+      }
+
       this.logger.info('Model recommendation generated', { finalSelection });
       return finalSelection;
     } catch (error) {
+      // Track error
+      if (this.analytics) {
+        this.analytics.trackError({
+          errorType: 'model_recommendation_failed',
+          errorMessage:
+            error instanceof Error ? error.message : 'Unknown error',
+          context: 'get_model_recommendation',
+        });
+      }
+
       this.logger.error('Failed to get model recommendation', error);
       throw new Error('Failed to generate model recommendation');
     }
@@ -132,6 +185,23 @@ export class AutoPromptRouter {
   clearCache(): void {
     modelCache.clearCache();
     this.logger.info('Model cache cleared');
+  }
+
+  /**
+   * Get analytics status for monitoring
+   */
+  getAnalyticsStatus() {
+    return this.analytics ? this.analytics.getStatus() : { enabled: false };
+  }
+
+  /**
+   * Graceful shutdown - flush analytics and cleanup resources
+   */
+  async shutdown(): Promise<void> {
+    if (this.analytics) {
+      await this.analytics.shutdown();
+      this.logger.info('Analytics system shut down');
+    }
   }
 
   // Private methods

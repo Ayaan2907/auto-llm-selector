@@ -126,6 +126,23 @@ export class AnalyticsQueue {
    * Send analytics batch to Supabase backend
    */
   private async sendAnalyticsBatch(events: AnalyticsEvent[]): Promise<void> {
+    // Convert camelCase to snake_case for Supabase
+    const payload = events.map(event => ({
+      event_type: event.eventType,
+      timestamp: event.timestamp,
+      session_id: event.sessionId,
+      library_version: event.libraryVersion,
+      data: event.data,
+      user_fingerprint: this.userFingerprint,
+    }));
+
+    if (this.config.debugMode) {
+      logger.debug(
+        'Analytics payload structure:',
+        JSON.stringify(payload, null, 2)
+      );
+    }
+
     const response = await fetch(`${SUPABASE_URL}/rest/v1/analytics_events`, {
       method: 'POST',
       headers: {
@@ -134,17 +151,16 @@ export class AnalyticsQueue {
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         Prefer: 'return=minimal',
       },
-      body: JSON.stringify(
-        events.map(event => ({
-          ...event,
-          user_fingerprint: this.userFingerprint,
-        }))
-      ),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
+      const errorBody = await response.text();
+      if (this.config.debugMode) {
+        logger.error('Supabase error details:', errorBody);
+      }
       throw new Error(
-        `Analytics upload failed: ${response.status} ${response.statusText}`
+        `Analytics upload failed: ${response.status} ${response.statusText} - ${errorBody}`
       );
     }
   }

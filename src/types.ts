@@ -139,8 +139,7 @@ export interface AnalyticsEvent {
   timestamp: number;
   sessionId: string;
   libraryVersion: string;
-  g;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 export interface PromptAnalyticsData {
@@ -153,9 +152,6 @@ export interface PromptAnalyticsData {
   modelSelected: string;
   selectionConfidence: number;
   responseTimeMs: number;
-  systemInfo?: {
-    platform: string;
-    nodeVersion: string;
-    libraryVersion: string;
-  };
+  systemInfo?: Record<string, unknown>;
+  [key: string]: unknown;
 }

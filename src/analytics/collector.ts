@@ -2,7 +2,6 @@ import { AnalyticsQueue } from './queue.js';
 import { AnalyticsUtils } from './utils.js';
 import type {
   AnalyticsConfig,
-  PromptAnalyticsData,
   PromptCategory,
   ModelSelection,
   PromptType,
@@ -34,9 +33,9 @@ export class AnalyticsCollector {
   }
 
   /**
-   * Track prompt classification and model selection event
+   * Track complete prompt request with all context
    */
-  trackPromptClassification(data: {
+  trackPromptRequest(data: {
     prompt: string;
     promptProperties: Record<string, unknown>;
     classification: PromptCategory;
@@ -47,60 +46,51 @@ export class AnalyticsCollector {
   }): void {
     if (!this.config.enabled || !this.config.collectPromptMetrics) return;
 
-    const promptHash = AnalyticsUtils.generateContentHash(data.prompt);
-    const analyticsData: PromptAnalyticsData = {
+    // const promptHash = AnalyticsUtils.generateContentHash(data.prompt);
+    const promptHash = data.prompt; // getting the prompt directyl for testing purposed for limited time
+    const analyticsData = {
       promptHash,
       promptLength: data.prompt.length,
       promptType: data.classification.type,
       classificationConfidence: data.classification.confidence,
-      semanticConfidence: data.semanticConfidence,
-      keywordConfidence: data.keywordConfidence,
       modelSelected: data.modelSelection.model,
       selectionConfidence: data.modelSelection.confidence,
+      selectionReason: data.modelSelection.reason,
       responseTimeMs: data.responseTimeMs,
-      systemInfo: this.systemInfo,
+      // Capture user requirements - crucial for ML training
+      userRequirements: {
+        accuracy: data.promptProperties.accuracy,
+        cost: data.promptProperties.cost,
+        speed: data.promptProperties.speed,
+        tokenLimit: data.promptProperties.tokenLimit,
+        reasoning: data.promptProperties.reasoning,
+      },
+      ...(data.semanticConfidence !== undefined && {
+        semanticConfidence: data.semanticConfidence,
+      }),
+      ...(data.keywordConfidence !== undefined && {
+        keywordConfidence: data.keywordConfidence,
+      }),
     };
 
     this.queue.enqueue({
-      eventType: 'prompt_classification',
+      eventType: 'prompt_request',
       libraryVersion: this.libraryVersion,
       data: analyticsData,
     });
 
     if (this.config.debugMode) {
-      logger.debug('Prompt classification tracked', {
+      logger.debug('Prompt request tracked', {
         promptHash,
         promptType: data.classification.type,
         modelSelected: data.modelSelection.model,
+        userRequirements: analyticsData.userRequirements,
       });
     }
   }
 
   /**
-   * Track model performance metrics
-   */
-  trackModelPerformance(data: {
-    modelId: string;
-    promptType: PromptType;
-    responseTimeMs: number;
-    success: boolean;
-    errorType?: string;
-    confidence: number;
-  }): void {
-    if (!this.config.enabled || !this.config.collectModelPerformance) return;
-
-    this.queue.enqueue({
-      eventType: 'model_performance',
-      libraryVersion: this.libraryVersion,
-      data: {
-        ...data,
-        systemInfo: this.systemInfo,
-      },
-    });
-  }
-
-  /**
-   * Track semantic classification metrics
+   * Track semantic classification metrics (lightweight - no system info)
    */
   trackSemanticMetrics(data: {
     promptHash: string;
@@ -117,17 +107,14 @@ export class AnalyticsCollector {
     this.queue.enqueue({
       eventType: 'semantic_classification',
       libraryVersion: this.libraryVersion,
-      data: {
-        ...data,
-        systemInfo: this.systemInfo,
-      },
+      data: data, // No system info - reference session
     });
   }
 
   /**
-   * Track library initialization
+   * Track session start (once per user session) - includes system info
    */
-  trackLibraryInitialization(data: {
+  trackSessionStart(data: {
     configOptions: Record<string, unknown>;
     initializationTimeMs: number;
     modelCacheSize: number;
@@ -135,19 +122,20 @@ export class AnalyticsCollector {
     if (!this.config.enabled) return;
 
     this.queue.enqueue({
-      eventType: 'library_initialization',
+      eventType: 'session_start',
       libraryVersion: this.libraryVersion,
       data: {
         configOptions: AnalyticsUtils.sanitizeConfig(data.configOptions),
         initializationTimeMs: data.initializationTimeMs,
         modelCacheSize: data.modelCacheSize,
+        // Only include system info in session_start event
         systemInfo: this.systemInfo,
       },
     });
   }
 
   /**
-   * Track error events
+   * Track error events (no system info - reference session)
    */
   trackError(data: {
     errorType: string;
@@ -160,10 +148,7 @@ export class AnalyticsCollector {
     this.queue.enqueue({
       eventType: 'error_event',
       libraryVersion: this.libraryVersion,
-      data: {
-        ...data,
-        systemInfo: this.systemInfo,
-      },
+      data: data, // No system info - reference session
     });
   }
 
