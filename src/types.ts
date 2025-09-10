@@ -25,6 +25,7 @@ export interface RouterConfig {
   selectorModel?: string; // LLM model to use for selection decisions
   enableLogging?: boolean;
   analytics?: AnalyticsConfig; // Optional analytics configuration
+
 }
 
 export interface ModelSelection {
