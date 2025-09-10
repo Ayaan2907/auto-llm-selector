@@ -150,10 +150,11 @@ import {
   AutoPromptRouter,
 
   // Core types for configuration and responses
-  type RouterConfig, // Settings for API key, model selection, logging
+  type RouterConfig, // Settings for API key, model selection, logging, analytics
   type PromptProperties, // Your requirements: accuracy, cost, speed, etc.
   type ModelSelection, // The recommendation result with model and reasoning
   type PromptCategory, // Classification result with type and confidence
+  type AnalyticsConfig, // Privacy-first analytics configuration options
 
   // Advanced types (optional, for custom integrations)
   type ModelProfile, // Complete model capability and characteristic data
@@ -181,6 +182,17 @@ import {
 const config: RouterConfig = {
   OPEN_ROUTER_API_KEY: 'your-key', // Required
   selectorModel: 'anthropic/claude-3-sonnet', // Optional: which model makes the selection
+  enableLogging: true, // Optional: see detailed logs
+
+  // Optional: Privacy-first analytics (opt-in)
+  analytics: {
+    enabled: true, // Must be explicitly enabled
+    collectPromptMetrics: true, // Prompt classification & model selection (hashed prompts only)
+    collectModelPerformance: true, // Model response times & success rates
+    collectSemanticFeatures: true, // Classification confidence & embedding metrics
+    collectSystemInfo: true, // Anonymized platform info (Node version, OS)
+    debugMode: false, // Verbose analytics logging
+  },
 };
 ```
 
@@ -232,6 +244,28 @@ npm install @tensorflow/tfjs-node @tensorflow-models/universal-sentence-encoder
 - **Selection Speed**: ~500-1500ms depending on selected LLM model
 - **Model Coverage**: 80+ models from OpenAI, Anthropic, Google, Meta, and others
 - **Cache Efficiency**: Model profiles cached for optimal performance
+
+### Privacy-First Analytics (Optional)
+
+When enabled, the router collects anonymized usage data to improve model recommendations:
+
+- **🔒 Privacy-First**: Prompts are hashed (never stored as plain text)
+- **📊 Zero Performance Impact**: Async batch processing in background
+- **🎯 Opt-In Only**: Analytics disabled by default, must be explicitly enabled
+- **📈 Improves Recommendations**: Helps train better model selection algorithms
+
+**What's collected:**
+
+- Prompt categories and classification confidence (hashed prompts only)
+- Model selection results and performance metrics
+- System information (Node version, platform - anonymized)
+- User fingerprint (based on system characteristics, no personal data)
+
+**What's NOT collected:**
+
+- Plain text prompts or responses
+- IP addresses or personal identifiers
+- API keys or sensitive configuration data
 
 ## Supported Models
 
