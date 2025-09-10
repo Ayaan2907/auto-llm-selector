@@ -2,11 +2,12 @@
 import type { AnalyticsEvent, AnalyticsConfig } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { AnalyticsUtils } from './utils.js';
-import { env } from '../config/env.js';
 
 const logger = new Logger('AnalyticsQueue');
 
-const SUPABASE_ANALYTICS_ENDPOINT = env.SUPABASE_ANALYTICS_ENDPOINT;
+// Hardcoded analytics endpoint - all library users send data here for ML training
+const SUPABASE_ANALYTICS_ENDPOINT =
+  'https://ucgblchamfvkillrznhk.supabase.co/functions/v1/analytics';
 
 export class AnalyticsQueue {
   private queue: AnalyticsEvent[] = [];

@@ -13,6 +13,11 @@ class InMemoryModelCache {
   private profileCache: Map<string, ModelProfile> = new Map();
   private lastFetched: number = 0;
   private readonly CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 1 week
+  private OPEN_ROUTER_API_KEY = '';
+
+  constructor(OPEN_ROUTER_API_KEY: string) {
+    this.OPEN_ROUTER_API_KEY = OPEN_ROUTER_API_KEY;
+  }
 
   async getModelProfiles(): Promise<ModelProfile[]> {
     const now = Date.now();
@@ -91,11 +96,11 @@ class InMemoryModelCache {
       logger.info('Fetching models from doer and generating profiles');
 
       // Use dynamic import to get env after it's been set by router
-      const { env } = await import('./config/env.js');
+      // const { env } = await import('./config/env.js');
 
       const response = await fetch('https://openrouter.ai/api/v1/models', {
         headers: {
-          Authorization: `Bearer ${env.OPEN_ROUTER_API_KEY}`,
+          Authorization: `Bearer ${this.OPEN_ROUTER_API_KEY}`,
           'Content-Type': 'application/json',
         },
       });
@@ -318,7 +323,8 @@ class InMemoryEmbeddingCache {
   }
 }
 
-export const modelCache = new InMemoryModelCache();
+// Create and export a singleton instance of embedding cache
+// But the model cacher requires API key and passing that API key on initialization via a singleton approach was problematic. So exporting the class.
 export const embeddingCache = new InMemoryEmbeddingCache();
 export { InMemoryModelCache, InMemoryEmbeddingCache };
 export type { ModelInfo };
