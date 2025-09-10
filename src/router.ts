@@ -293,7 +293,7 @@ Important: The "model" field must exactly match one of the model IDs from the li
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${process.env.OPEN_ROUTER_API_KEY}`,
+            Authorization: `Bearer ${this.config.OPEN_ROUTER_API_KEY}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
