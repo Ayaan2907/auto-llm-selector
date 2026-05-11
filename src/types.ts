@@ -2,10 +2,19 @@
 
 export interface PromptProperties {
   accuracy: number; // 0-1: How accurate the response needs to be
-  cost: number; // 0-1: Cost sensitivity (0 = cost matters, 1 = cost doesn't matter)
+  /** 0 = very cost sensitive, 1 = cost no object (premium models allowed) */
+  cost: number;
   speed: number; // 0-1: Speed requirement (0 = slow ok, 1 = need fast)
-  tokenLimit: number; // Maximum tokens needed for response
+  /** Minimum context window (input + expected output) in tokens */
+  tokenLimit: number;
   reasoning: boolean; // Whether complex reasoning is required
+  /** When true, only multimodal-capable models are considered */
+  multimodal?: boolean;
+  /**
+   * 0 = prefer cheaper models when quality is acceptable, 1 = prefer quality.
+   * Inspired by RouteLLM-style cost/quality tradeoff calibration.
+   */
+  qualityVsCost?: number;
 }
 
 export interface AnalyticsConfig {
@@ -17,15 +26,55 @@ export interface AnalyticsConfig {
   batchSize?: number; // Events per batch upload (default: 50)
   batchIntervalMs?: number; // Max time before batch upload (default: 5000)
   debugMode?: boolean; // Verbose analytics logging (default: false)
+  /** Override default analytics ingest URL (must be HTTPS) */
+  endpointUrl?: string;
+  /** Optional bearer token or shared secret sent as Authorization header */
+  apiKey?: string;
 }
+
+export type ModelSelectionStrategy = 'deterministic' | 'llm';
+
+export type RouterTelemetryHooks = {
+  /** Fires after a model id is chosen (deterministic or LLM). */
+  onModelSelected?: (event: {
+    modelId: string;
+    selectionStrategy: ModelSelectionStrategy;
+    selectionId?: string;
+  }) => void;
+};
 
 export interface RouterConfig {
   OPEN_ROUTER_API_KEY: string;
-  // preferredProvider?: string  // e.g., "openai", "anthropic", "meta-llama"
-  selectorModel?: string; // LLM model to use for selection decisions
+  /** Model used when `selectionStrategy` is `llm` */
+  selectorModel?: string;
+  /**
+   * `deterministic` (default): local scoring via ModelProfiler (fast, reproducible).
+   * `llm`: legacy meta-LLM selection via OpenRouter chat completions.
+   */
+  selectionStrategy?: ModelSelectionStrategy;
   enableLogging?: boolean;
-  analytics?: AnalyticsConfig; // Optional analytics configuration
-
+  analytics?: AnalyticsConfig;
+  /** TTL for OpenRouter model catalog cache (default 24h) */
+  modelCatalogCacheTtlMs?: number;
+  /**
+   * Optional JSON file path to persist model profiles for offline / stale fallback
+   * when OpenRouter is unreachable.
+   */
+  modelCatalogPersistentCachePath?: string;
+  /**
+   * Wildcards like OpenRouter Auto Router `allowed_models` (e.g. anthropic/*).
+   * When non-empty, only matching model IDs are eligible.
+   */
+  allowedModelPatterns?: string[];
+  /** Models matching any pattern are excluded */
+  excludedModelPatterns?: string[];
+  /**
+   * When true, blends semantic + keyword signals into weighted category scores
+   * instead of a single winning category.
+   */
+  multiLabelClassification?: boolean;
+  /** Optional hooks for observability / experimentation */
+  telemetry?: RouterTelemetryHooks;
 }
 
 export interface ModelSelection {
@@ -33,6 +82,12 @@ export interface ModelSelection {
   reason: string;
   confidence: number; // 0-1: How confident the selection is
   category: PromptCategory;
+  /** Stable id for correlating optional outcome feedback */
+  selectionId?: string;
+  /** Normalized category weights when multi-label classification is enabled */
+  categoryWeights?: Partial<Record<PromptType, number>>;
+  /** How the model was chosen */
+  selectionStrategy?: ModelSelectionStrategy;
 }
 
 export enum PromptType {
