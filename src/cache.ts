@@ -1,30 +1,51 @@
+import { readFile, writeFile } from 'node:fs/promises';
 import { Logger } from './utils/logger.js';
 import { ModelProfiler } from './lib/model-profiler.js';
+import { createStableTextCacheKey } from './lib/text-cache-key.js';
+import { fetchWithRetry } from './http/retry-fetch.js';
+import type { OpenRouterRateLimiter } from './http/openrouter-rate-limit.js';
 import type { ModelInfo, PromptCategory, ModelProfile } from './types.js';
 
 const logger = new Logger('Cache:ModelStore');
 const embeddingLogger = new Logger('Cache:EmbeddingStore');
 
+const DEFAULT_MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 interface llmModelProviderResponse {
   data: ModelInfo[];
 }
 
+export type ModelCacheOptions = {
+  catalogCacheTtlMs?: number;
+  persistentCatalogPath?: string;
+  rateLimiter?: OpenRouterRateLimiter;
+};
+
 class InMemoryModelCache {
   private profileCache: Map<string, ModelProfile> = new Map();
   private lastFetched: number = 0;
-  private readonly CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 1 week
+  private readonly cacheTtlMs: number;
+  private readonly persistentCatalogPath: string | undefined;
+  private readonly rateLimiter: OpenRouterRateLimiter | undefined;
   private OPEN_ROUTER_API_KEY = '';
 
-  constructor(OPEN_ROUTER_API_KEY: string) {
+  constructor(OPEN_ROUTER_API_KEY: string, options?: ModelCacheOptions) {
     this.OPEN_ROUTER_API_KEY = OPEN_ROUTER_API_KEY;
+    this.cacheTtlMs = options?.catalogCacheTtlMs ?? DEFAULT_MODEL_CACHE_TTL_MS;
+    this.persistentCatalogPath = options?.persistentCatalogPath;
+    this.rateLimiter = options?.rateLimiter;
   }
 
   async getModelProfiles(): Promise<ModelProfile[]> {
     const now = Date.now();
 
+    if (this.profileCache.size === 0 && this.persistentCatalogPath) {
+      await this.tryLoadProfilesFromDisk();
+    }
+
     if (
       this.profileCache.size === 0 ||
-      now - this.lastFetched > this.CACHE_TTL
+      now - this.lastFetched > this.cacheTtlMs
     ) {
       await this.fetchAndCacheProfiles();
     }
@@ -55,10 +76,8 @@ class InMemoryModelCache {
 
     return profiles
       .filter(profile => {
-        // Basic capability threshold
         if (profile.capabilities[categoryKey] < 0.3) return false;
 
-        // Requirements filtering
         if (
           requirements?.maxCost &&
           profile.promptCostPerToken > requirements.maxCost
@@ -92,15 +111,25 @@ class InMemoryModelCache {
   }
 
   private async fetchAndCacheProfiles(): Promise<void> {
-    try {
-      logger.info('Fetching models from doer and generating profiles');
+    const previousProfiles = new Map(this.profileCache);
+    const previousLastFetched = this.lastFetched;
 
-      const response = await fetch('https://openrouter.ai/api/v1/models', {
-        headers: {
-          Authorization: `Bearer ${this.OPEN_ROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      });
+    try {
+      logger.info('Fetching models from OpenRouter and generating profiles');
+
+      if (this.rateLimiter) {
+        await this.rateLimiter.acquire();
+      }
+
+      const response = await fetchWithRetry(
+        'https://openrouter.ai/api/v1/models',
+        {
+          headers: {
+            Authorization: `Bearer ${this.OPEN_ROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`OpenRouter API error: ${response.status}`);
@@ -108,27 +137,87 @@ class InMemoryModelCache {
 
       const data = (await response.json()) as llmModelProviderResponse;
 
-      // Clear existing profiles and generate new ones
-      this.profileCache.clear();
+      const nextCache = new Map<string, ModelProfile>();
       let profilesGenerated = 0;
 
       for (const modelInfo of data.data) {
         try {
           const profile = ModelProfiler.createModelProfile(modelInfo);
-          this.profileCache.set(modelInfo.id, profile);
+          nextCache.set(modelInfo.id, profile);
           profilesGenerated++;
         } catch (error) {
           logger.warn(`Failed to generate profile for ${modelInfo.id}:`, error);
         }
       }
 
+      this.profileCache = nextCache;
       this.lastFetched = Date.now();
       logger.info(
         `Generated and cached ${profilesGenerated} model profiles from ${data.data.length} OpenRouter models`
       );
+
+      if (this.persistentCatalogPath) {
+        await this.persistProfilesToDisk();
+      }
     } catch (error) {
       logger.error('Failed to fetch models from OpenRouter', error);
+
+      if (previousProfiles.size > 0) {
+        logger.warn(
+          'Using stale in-memory model catalog after OpenRouter fetch failure'
+        );
+        this.profileCache = previousProfiles;
+        this.lastFetched = previousLastFetched;
+        return;
+      }
+
+      if (this.persistentCatalogPath) {
+        const loaded = await this.tryLoadProfilesFromDisk();
+        if (loaded) {
+          logger.warn(
+            'Loaded model catalog from persistent cache after OpenRouter fetch failure'
+          );
+          return;
+        }
+      }
+
       throw error;
+    }
+  }
+
+  private async persistProfilesToDisk(): Promise<void> {
+    if (!this.persistentCatalogPath) return;
+    try {
+      const payload = {
+        savedAt: Date.now(),
+        profiles: Object.fromEntries(this.profileCache.entries()),
+      };
+      await writeFile(
+        this.persistentCatalogPath,
+        JSON.stringify(payload),
+        'utf8'
+      );
+    } catch (error) {
+      logger.warn('Failed to persist model catalog cache', error);
+    }
+  }
+
+  private async tryLoadProfilesFromDisk(): Promise<boolean> {
+    if (!this.persistentCatalogPath) return false;
+    try {
+      const raw = await readFile(this.persistentCatalogPath, 'utf8');
+      const parsed = JSON.parse(raw) as {
+        profiles?: Record<string, ModelProfile>;
+      };
+      const entries = Object.entries(parsed.profiles ?? {});
+      if (entries.length === 0) return false;
+
+      this.profileCache = new Map(entries);
+      this.lastFetched = 0;
+      return true;
+    } catch (error) {
+      logger.warn('Failed to load persistent model catalog cache', error);
+      return false;
     }
   }
 
@@ -156,28 +245,21 @@ class InMemoryEmbeddingCache {
   private readonly EMBEDDING_TTL = 24 * 60 * 60 * 1000; // 24 hours
   private readonly CLASSIFICATION_TTL = 30 * 60 * 1000; // 30 minutes
 
-  /**
-   * Store text embedding in cache
-   */
   setEmbedding(text: string, embedding: number[]): void {
-    const key = this.createKey(text);
+    const key = createStableTextCacheKey(text);
     this.embeddingCache.set(key, {
-      embedding: [...embedding], // Clone array
+      embedding: [...embedding],
       timestamp: Date.now(),
     });
     embeddingLogger.debug(`Cached embedding for text (${text.length} chars)`);
   }
 
-  /**
-   * Retrieve text embedding from cache
-   */
   getEmbedding(text: string): number[] | null {
-    const key = this.createKey(text);
+    const key = createStableTextCacheKey(text);
     const cached = this.embeddingCache.get(key);
 
     if (!cached) return null;
 
-    // Check if expired
     if (Date.now() - cached.timestamp > this.EMBEDDING_TTL) {
       this.embeddingCache.delete(key);
       return null;
@@ -186,16 +268,13 @@ class InMemoryEmbeddingCache {
     embeddingLogger.debug(
       `Retrieved cached embedding for text (${text.length} chars)`
     );
-    return [...cached.embedding]; // Return copy
+    return [...cached.embedding];
   }
 
-  /**
-   * Store classification result in cache
-   */
   setClassification(text: string, result: PromptCategory): void {
-    const key = this.createKey(text);
+    const key = createStableTextCacheKey(text);
     this.classificationCache.set(key, {
-      result: { ...result }, // Clone object
+      result: { ...result },
       timestamp: Date.now(),
     });
     embeddingLogger.debug(
@@ -203,16 +282,12 @@ class InMemoryEmbeddingCache {
     );
   }
 
-  /**
-   * Retrieve classification result from cache
-   */
   getClassification(text: string): PromptCategory | null {
-    const key = this.createKey(text);
+    const key = createStableTextCacheKey(text);
     const cached = this.classificationCache.get(key);
 
     if (!cached) return null;
 
-    // Check if expired
     if (Date.now() - cached.timestamp > this.CLASSIFICATION_TTL) {
       this.classificationCache.delete(key);
       return null;
@@ -221,12 +296,9 @@ class InMemoryEmbeddingCache {
     embeddingLogger.debug(
       `Retrieved cached classification: ${cached.result.type}`
     );
-    return { ...cached.result }; // Return copy
+    return { ...cached.result };
   }
 
-  /**
-   * Store reference embedding for a category
-   */
   setReferenceEmbedding(category: string, embedding: number[]): void {
     this.referenceEmbeddings.set(category, [...embedding]);
     embeddingLogger.info(
@@ -234,17 +306,11 @@ class InMemoryEmbeddingCache {
     );
   }
 
-  /**
-   * Retrieve reference embedding for a category
-   */
   getReferenceEmbedding(category: string): number[] | null {
     const embedding = this.referenceEmbeddings.get(category);
     return embedding ? [...embedding] : null;
   }
 
-  /**
-   * Get all reference embeddings
-   */
   getAllReferenceEmbeddings(): Map<string, number[]> {
     const result = new Map<string, number[]>();
     for (const [category, embedding] of this.referenceEmbeddings.entries()) {
@@ -253,25 +319,17 @@ class InMemoryEmbeddingCache {
     return result;
   }
 
-  /**
-   * Clear all caches
-   */
   clearCache(): void {
     this.embeddingCache.clear();
     this.classificationCache.clear();
-    // Don't clear reference embeddings as they're expensive to recreate
     embeddingLogger.info('Embedding and classification caches cleared');
   }
 
-  /**
-   * Clear only expired entries
-   */
   cleanupExpiredEntries(): void {
     const now = Date.now();
     let cleanedEmbeddings = 0;
     let cleanedClassifications = 0;
 
-    // Clean embedding cache
     for (const [key, data] of this.embeddingCache.entries()) {
       if (now - data.timestamp > this.EMBEDDING_TTL) {
         this.embeddingCache.delete(key);
@@ -279,7 +337,6 @@ class InMemoryEmbeddingCache {
       }
     }
 
-    // Clean classification cache
     for (const [key, data] of this.classificationCache.entries()) {
       if (now - data.timestamp > this.CLASSIFICATION_TTL) {
         this.classificationCache.delete(key);
@@ -294,9 +351,6 @@ class InMemoryEmbeddingCache {
     }
   }
 
-  /**
-   * Get cache statistics
-   */
   getStats() {
     return {
       embeddings: this.embeddingCache.size,
@@ -304,24 +358,8 @@ class InMemoryEmbeddingCache {
       referenceEmbeddings: this.referenceEmbeddings.size,
     };
   }
-
-  /**
-   * Create consistent cache key from text
-   */
-  private createKey(text: string): string {
-    // Simple hash function for cache key
-    let hash = 0;
-    for (let i = 0; i < text.length; i++) {
-      const char = text.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return `${hash}_${text.length}`;
-  }
 }
 
-// Create and export a singleton instance of embedding cache
-// But the model cache requires API key and passing that API key on initialization via a singleton approach was problematic. So exporting the class.
 export const embeddingCache = new InMemoryEmbeddingCache();
 export { InMemoryModelCache, InMemoryEmbeddingCache };
 export type { ModelInfo };
