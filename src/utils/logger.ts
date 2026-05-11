@@ -2,9 +2,15 @@
 const isServer =
   typeof global !== 'undefined' && typeof process !== 'undefined';
 
+export type LoggerOptions = {
+  /** When false, suppresses non-error logs (errors still emit for diagnostics). */
+  enabled?: boolean;
+};
+
 export class Logger {
   private context: string;
   private isServerContext: boolean;
+  private enabled: boolean;
   private colors = {
     reset: '\x1b[0m',
     red: '\x1b[31m',
@@ -15,12 +21,14 @@ export class Logger {
     magenta: '\x1b[35m',
   };
 
-  constructor(context: string) {
+  constructor(context: string, options?: LoggerOptions) {
     this.context = context;
     this.isServerContext = isServer;
+    this.enabled = options?.enabled ?? true;
   }
 
   private shouldLog(): boolean {
+    if (!this.enabled) return false;
     // Always log server-side actions
     if (this.isServerContext) return true;
     // Only log client-side in development
@@ -71,7 +79,7 @@ export class Logger {
   }
 
   error(message: string, error?: Error | unknown, data?: any) {
-    if (!this.shouldLog()) return;
+    if (!this.enabled && !this.isServerContext) return;
     const errorData =
       error instanceof Error
         ? { name: error.name, message: error.message, stack: error.stack }
