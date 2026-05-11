@@ -81,6 +81,14 @@ router.clearCache();
 await router.initialize(); // Re-fetch model data
 ```
 
+#### `getModelRecommendations(items): Promise<ModelSelection[]>`
+
+Batch helper that calls `getModelRecommendation` sequentially for each item.
+
+#### `reportOutcome(selectionId, quality)`
+
+Stores lightweight in-process feedback keyed by `selectionId` from `ModelSelection`.
+
 ## Interfaces
 
 ### RouterConfig
@@ -88,18 +96,33 @@ await router.initialize(); // Re-fetch model data
 Configuration for the AutoPromptRouter.
 
 ```typescript
+type ModelSelectionStrategy = 'deterministic' | 'llm';
+
 interface RouterConfig {
-  OPEN_ROUTER_API_KEY: string; // Required: Your OpenRouter API key
-  selectorModel?: string; // Optional: Model to use for selection (default: 'openai/gpt-oss-20b:free')
-  enableLogging?: boolean; // Optional: Enable detailed logging (default: false)
+  OPEN_ROUTER_API_KEY: string;
+  selectorModel?: string; // Used when selectionStrategy is 'llm'
+  selectionStrategy?: ModelSelectionStrategy; // default: 'deterministic'
+  enableLogging?: boolean; // default: true
+  analytics?: AnalyticsConfig;
+  modelCatalogCacheTtlMs?: number; // default: 24h
+  modelCatalogPersistentCachePath?: string; // optional JSON snapshot path
+  allowedModelPatterns?: string[]; // e.g. ['anthropic/*']
+  excludedModelPatterns?: string[];
+  multiLabelClassification?: boolean; // default: false
+  telemetry?: RouterTelemetryHooks;
 }
 ```
 
 **Properties:**
 
 - `OPEN_ROUTER_API_KEY` - Get yours at [openrouter.ai](https://openrouter.ai)
-- `selectorModel` - Which model makes the final selection decision
-- `enableLogging` - Shows detailed logs of classification and selection process
+- `selectionStrategy` - `deterministic` avoids an extra routing LLM call; `llm` uses OpenRouter chat completions
+- `selectorModel` - Only used for `selectionStrategy: 'llm'`
+- `enableLogging` - When `false`, suppresses routine logs (errors may still emit on server runtimes)
+- `modelCatalogPersistentCachePath` - Optional local JSON cache used as a cold-start / offline fallback
+- `allowedModelPatterns` / `excludedModelPatterns` - Wildcard filters applied as hard constraints
+- `multiLabelClassification` - Enables weighted multi-category routing
+- `telemetry` - Optional hooks (for example `onModelSelected`)
 
 ### PromptProperties
 
@@ -107,21 +130,25 @@ Your requirements and preferences for the AI response.
 
 ```typescript
 interface PromptProperties {
-  accuracy: number; // 0-1: How accurate/precise the response needs to be
-  cost: number; // 0-1: Cost sensitivity (0=very cost sensitive, 1=cost no object)
-  speed: number; // 0-1: Speed requirement (0=slow ok, 1=need fast response)
-  tokenLimit: number; // Maximum tokens you expect in the response
-  reasoning: boolean; // Whether the task requires complex reasoning/logic
+  accuracy: number; // 0-1
+  cost: number; // 0 = very cost sensitive, 1 = cost no object
+  speed: number; // 0-1
+  tokenLimit: number; // minimum required context window (tokens)
+  reasoning: boolean;
+  multimodal?: boolean;
+  qualityVsCost?: number; // 0-1 (used by multi-label deterministic ranking)
 }
 ```
 
 **Guidelines:**
 
-- **accuracy**: `0.9+` for code/analysis, `0.6-0.8` for creative/casual tasks
-- **cost**: `0.1` for budget-conscious, `0.5` for moderate, `0.8+` for premium quality
-- **speed**: `0.9+` for real-time chat, `0.5` for moderate, `0.3` for quality-focused
-- **tokenLimit**: Estimate your expected response length (500=short, 3000=medium, 8000+=long)
-- **reasoning**: `true` for coding, math, analysis; `false` for creative, simple questions
+- **accuracy**: higher values tighten the minimum accuracy tier filter
+- **cost**: lower values tighten the maximum cost tier filter
+- **speed**: higher values tighten the minimum speed tier filter
+- **tokenLimit**: treated as a **minimum context window** requirement (`contextLength >= tokenLimit`)
+- **reasoning**: when `true`, only models flagged as reasoning-capable are eligible
+- **multimodal**: when `true`, only multimodal models are eligible
+- **qualityVsCost**: biases multi-label deterministic ranking toward quality vs cost efficiency
 
 ### ModelSelection
 
@@ -129,10 +156,13 @@ The result returned by `getModelRecommendation()`.
 
 ```typescript
 interface ModelSelection {
-  model: string; // The selected model ID (e.g., 'openai/gpt-4')
-  reason: string; // Human-readable explanation of why this model was chosen
-  confidence: number; // 0-1: How confident the selection system is in this choice
-  category: PromptCategory; // How your prompt was classified
+  model: string;
+  reason: string;
+  confidence: number;
+  category: PromptCategory;
+  selectionId?: string;
+  categoryWeights?: Partial<Record<PromptType, number>>;
+  selectionStrategy?: ModelSelectionStrategy;
 }
 ```
 
@@ -263,8 +293,10 @@ try {
 
 ## Performance Notes
 
-- **Initialization**: ~1-3 seconds to fetch and profile all models
-- **Classification**: ~100-300ms for hybrid semantic + keyword analysis
-- **Selection**: ~500-1500ms depending on the selector model used
-- **Caching**: Model profiles are cached in memory for optimal performance
-- **Rate Limits**: Respects OpenRouter API rate limits automatically
+- **Initialization**: dominated by downloading OpenRouter’s model list and building profiles (network + CPU)
+- **Classification**: first semantic classification may pay a one-time TensorFlow.js model load cost; later calls are much faster due to caching
+- **Selection**:
+  - `deterministic`: typically milliseconds (no extra routing LLM call)
+  - `llm`: adds a chat-completions round trip similar to any other OpenRouter call
+- **Caching**: model catalog TTL defaults to 24 hours; embedding/classification caches use stable SHA-256 keys
+- **Retries**: OpenRouter HTTP calls use bounded exponential backoff for transient failures

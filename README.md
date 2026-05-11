@@ -11,9 +11,9 @@ With so many great AI models available (GPT-4, Claude, Gemini, Llama, etc.), cho
 This router solves that problem by:
 
 - Understanding what type of task you're doing (coding, writing, analysis, etc.)
-- Knowing the strengths and weaknesses of 80+ different models
-- Considering your specific needs (speed, accuracy, cost)
-- Making the optimal choice for you automatically
+- Building capability profiles for **all models** exposed by OpenRouter’s catalog (with curated overrides for common models)
+- Enforcing hard constraints for context window, multimodal needs, and coarse cost/speed/accuracy tiers
+- Choosing a model using **deterministic ranking by default** (fast + reproducible), with an optional legacy LLM selector mode
 
 ## Installation
 
@@ -108,19 +108,15 @@ const quickChat = await router.getModelRecommendation(
 
 ## How It Actually Works
 
-The magic happens in a few steps:
+1. **Understanding your prompt**: hybrid semantic embeddings + keyword scoring (optional **multi-label** mode blends category weights).
 
-1. **Understanding Your Prompt**: The system reads your prompt and figures out what category it falls into - is this a coding question? Creative writing? Data analysis? It uses both AI embeddings and keyword matching to be really accurate.
+2. **Profiling models**: fetch OpenRouter’s `/models` list and derive per-model capability scores (curated map + heuristics for unknown IDs).
 
-2. **Knowing the Models**: We've tested and profiled over many different AI models. Each one gets scored on things like:
-   - How good is it at coding vs creative tasks?
-   - How fast does it respond?
-   - How much does it cost?
-   - Can it handle complex reasoning?
+3. **Hard filtering**: enforce minimum context window, multimodal constraints, wildcard allow/deny lists, and tier filters derived from your `accuracy` / `cost` / `speed` knobs.
 
-3. **Making the Choice**: An AI looks at your prompt, your requirements, and all the model profiles, then picks the best match. It even explains why it made that choice.
+4. **Selection**: default **deterministic** ranking via `ModelProfiler` (no extra routing LLM call). Set `selectionStrategy: 'llm'` if you want the legacy meta-LLM chooser.
 
-4. **Learning Over Time**: The system gets smarter as it sees more examples of what works well. // TODO: NOT YET FULLY IMPLEMENTED
+5. **Optional feedback loop**: `ModelSelection.selectionId` + `router.reportOutcome(...)` stores lightweight in-process outcomes for your own evaluation pipelines.
 
 ## What You Get Back
 
@@ -130,6 +126,7 @@ Every recommendation includes:
 - **A clear explanation** of why this model was chosen
 - **Confidence scores** so you know how sure the system is
 - **Category classification** showing how your prompt was understood
+- **`selectionId`** (stable UUID) for optional outcome tracking via `reportOutcome`
 
 ## Available Model Categories
 
