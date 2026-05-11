@@ -1,41 +1,24 @@
+/* eslint-env node */
 import { z } from 'zod';
-import { Logger } from '../utils/logger.js';
 
-const logger = new Logger('Config:Env');
-
-// Schema for environment variables
-const envSchema = z.object({
-  OPEN_ROUTER_API_KEY: z.string(),
-  MODEL_SELECTOR_MODEL: z.string().default('openai/gpt-oss-20b:free'),
-  NODE_ENV: z.string().default('development'),
-  SUPABASE_ANALYTICS_ENDPOINT: z.string(),
+/**
+ * Optional environment parsing for host applications.
+ * This module does not read `process.env` at import time.
+ */
+const routerEnvSchema = z.object({
+  OPEN_ROUTER_API_KEY: z.string().min(1),
+  MODEL_SELECTOR_MODEL: z.string().min(1).optional(),
+  NODE_ENV: z.string().optional(),
 });
 
-// Function to validate environment variables
-const validateEnv = () => {
-  try {
-    logger.info('Validating environment variables');
-    const env = {
-      OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY,
-      MODEL_SELECTOR_MODEL: process.env.MODEL_SELECTOR_MODEL,
-      NODE_ENV: process.env.NODE_ENV,
-      SUPABASE_ANALYTICS_ENDPOINT: process.env.SUPABASE_ANALYTICS_ENDPOINT,
-    };
-    const parsed = envSchema.parse(env);
-    logger.info('Environment variables validated successfully');
-    return parsed;
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const missingVars = error.issues.map(err => err.path.join('.'));
-      logger.error('Invalid environment variables', { error: { missingVars } });
-      throw new Error(
-        `❌ Invalid environment variables: ${missingVars.join(
-          ', '
-        )}. Please check your .env file`
-      );
-    }
-    throw error;
-  }
-};
+export type ParsedRouterEnvironment = z.infer<typeof routerEnvSchema>;
 
-export const env = validateEnv();
+export function parseRouterEnvironment(
+  env: typeof process.env = process.env
+): ParsedRouterEnvironment {
+  return routerEnvSchema.parse({
+    OPEN_ROUTER_API_KEY: env.OPEN_ROUTER_API_KEY,
+    MODEL_SELECTOR_MODEL: env.MODEL_SELECTOR_MODEL,
+    NODE_ENV: env.NODE_ENV,
+  });
+}
