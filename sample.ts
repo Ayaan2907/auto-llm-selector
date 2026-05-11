@@ -14,7 +14,7 @@ import {
   AutoPromptRouter,
   type RouterConfig,
   type PromptProperties,
-} from 'auto-prompt-router';
+} from './src/index.js';
 
 async function testAutoPromptRouter() {
   console.log('🚀 Testing Auto Prompt Router...\n');
