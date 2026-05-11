@@ -1,14 +1,33 @@
+import { randomUUID } from 'node:crypto';
 import { Logger } from './utils/logger.js';
 import { InMemoryModelCache } from './cache.js';
 import { PromptClassifier } from './classifier.js';
 import { AnalyticsCollector } from './analytics/collector.js';
+import { ModelProfiler } from './lib/model-profiler.js';
+import { fetchWithRetry } from './http/retry-fetch.js';
+import { OpenRouterRateLimiter } from './http/openrouter-rate-limit.js';
+import {
+  applyHardFilters,
+  type HardFilterOptions,
+} from './routing/hard-filters.js';
+import { buildRankRequirementsFromProperties } from './routing/requirements-from-properties.js';
+import {
+  assertValidPrompt,
+  assertValidPromptProperties,
+} from './validation/schemas.js';
+import {
+  OutcomeFeedbackStore,
+  type OutcomeQuality,
+} from './feedback/outcome-store.js';
 import type {
   RouterConfig,
   PromptProperties,
   ModelSelection,
   PromptCategory,
   ModelProfile,
+  ModelSelectionStrategy,
 } from './types.js';
+import { PromptType } from './types.js';
 
 export class AutoPromptRouter {
   private logger: Logger;
@@ -16,40 +35,49 @@ export class AutoPromptRouter {
   private isInitialized: boolean = false;
   private analytics: AnalyticsCollector | null = null;
   private modelCache: InMemoryModelCache;
+  private readonly rateLimiter: OpenRouterRateLimiter;
+  private readonly outcomes: OutcomeFeedbackStore;
 
   constructor(config: RouterConfig) {
     this.config = {
       selectorModel: 'openai/gpt-oss-20b:free',
+      selectionStrategy: 'deterministic',
       ...config,
     };
 
-    this.logger = new Logger('AutoPromptRouter');
+    this.logger = new Logger('AutoPromptRouter', {
+      enabled: this.config.enableLogging !== false,
+    });
 
-    // Initialize model cache with API key
-    this.modelCache = new InMemoryModelCache(this.config.OPEN_ROUTER_API_KEY);
+    this.rateLimiter = new OpenRouterRateLimiter();
+    this.modelCache = new InMemoryModelCache(this.config.OPEN_ROUTER_API_KEY, {
+      ...(this.config.modelCatalogCacheTtlMs !== undefined && {
+        catalogCacheTtlMs: this.config.modelCatalogCacheTtlMs,
+      }),
+      ...(this.config.modelCatalogPersistentCachePath !== undefined && {
+        persistentCatalogPath: this.config.modelCatalogPersistentCachePath,
+      }),
+      rateLimiter: this.rateLimiter,
+    });
 
-    // Initialize analytics if enabled
+    this.outcomes = new OutcomeFeedbackStore();
+
     if (this.config.analytics?.enabled) {
       this.analytics = new AnalyticsCollector(this.config.analytics);
     }
   }
 
-  /**
-   * Initialize the router by fetching and caching model data
-   */
   async initialize(): Promise<void> {
     const startTime = Date.now();
 
     try {
       this.logger.info('Initializing AutoPromptRouter');
 
-      // Pre-fetch and cache model profiles
       const modelProfiles = await this.modelCache.getModelProfiles();
 
       this.isInitialized = true;
       this.logger.info('AutoPromptRouter initialized successfully');
 
-      // Track session start (includes system info)
       if (this.analytics) {
         this.analytics.trackSessionStart({
           configOptions: { ...this.config },
@@ -58,7 +86,6 @@ export class AutoPromptRouter {
         });
       }
     } catch (error) {
-      // Track initialization error
       if (this.analytics) {
         this.analytics.trackError({
           errorType: 'initialization_failed',
@@ -75,9 +102,6 @@ export class AutoPromptRouter {
     }
   }
 
-  /**
-   * Get model recommendation for a prompt
-   */
   async getModelRecommendation(
     prompt: string,
     properties: PromptProperties
@@ -88,19 +112,20 @@ export class AutoPromptRouter {
       throw new Error('Router not initialized. Call initialize() first.');
     }
 
+    assertValidPrompt(prompt);
+    assertValidPromptProperties(properties);
+
     this.logger.info('Getting model recommendation', {
       promptLength: prompt.length,
       properties,
     });
 
     try {
-      // Step 1: Get all model profiles from cache
       const allProfiles = await this.modelCache.getModelProfiles();
       this.logger.debug(
         `Retrieved ${allProfiles.length} model profiles from cache`
       );
 
-      // Step 2: Filter by reasoning requirement
       let availableProfiles = allProfiles;
       if (properties.reasoning === true) {
         availableProfiles = allProfiles.filter(
@@ -118,18 +143,40 @@ export class AutoPromptRouter {
         );
       }
 
-      // Step 3: Process prompt through classifier → ML → Category
-      const category = await this.classifyPrompt(prompt);
+      const multiLabel = this.config.multiLabelClassification === true;
+      const categoryWeights = multiLabel
+        ? await PromptClassifier.getCategoryWeightDistribution(prompt)
+        : undefined;
+
+      const category = multiLabel
+        ? this.pickPrimaryCategoryFromWeights(categoryWeights!)
+        : await this.classifyPrompt(prompt);
+
       this.logger.info(
         `Prompt classified as: ${category.type} (confidence: ${category.confidence.toFixed(2)})`
       );
 
-      // Step 4: Filter profiles by category capability
       const categoryKey =
         category.type.toLowerCase() as keyof ModelProfile['capabilities'];
-      const categoryProfiles = availableProfiles.filter(
-        profile => profile.capabilities[categoryKey] >= 0.3 // Minimum capability threshold
-      );
+
+      const categoryProfiles = availableProfiles.filter(profile => {
+        if (!categoryWeights) {
+          return profile.capabilities[categoryKey] >= 0.3;
+        }
+        const blended = this.blendedCapabilityScore(profile, categoryWeights);
+        return blended >= 0.3;
+      });
+
+      categoryProfiles.sort((a, b) => {
+        if (!categoryWeights) {
+          return b.capabilities[categoryKey] - a.capabilities[categoryKey];
+        }
+        return (
+          this.blendedCapabilityScore(b, categoryWeights) -
+          this.blendedCapabilityScore(a, categoryWeights)
+        );
+      });
+
       this.logger.debug(
         `Filtered to ${categoryProfiles.length} models suitable for ${category.type}`
       );
@@ -140,17 +187,63 @@ export class AutoPromptRouter {
         );
       }
 
-      // Step 5: Pass to LLM decision with profiles
-      const finalSelection = await this.getLLMDecisionWithProfiles(
-        prompt,
-        properties,
+      const hardFilterOptions: HardFilterOptions = {};
+      if (this.config.allowedModelPatterns !== undefined) {
+        hardFilterOptions.allowedModelPatterns =
+          this.config.allowedModelPatterns;
+      }
+      if (this.config.excludedModelPatterns !== undefined) {
+        hardFilterOptions.excludedModelPatterns =
+          this.config.excludedModelPatterns;
+      }
+
+      const hardFiltered = applyHardFilters(
         categoryProfiles,
-        category
+        properties,
+        hardFilterOptions
       );
+
+      if (hardFiltered.length === 0) {
+        throw new Error(
+          'No models matched hard filters (context window, cost/speed/accuracy tiers, patterns, multimodal).'
+        );
+      }
+
+      const rankRequirements = buildRankRequirementsFromProperties(properties);
+      const strategy: ModelSelectionStrategy =
+        this.config.selectionStrategy ?? 'deterministic';
+
+      const selectionId = randomUUID();
+
+      const finalSelection =
+        strategy === 'llm'
+          ? await this.getLLMDecisionWithProfiles(
+              prompt,
+              properties,
+              hardFiltered,
+              category,
+              selectionId
+            )
+          : this.getDeterministicSelection(
+              hardFiltered,
+              category,
+              rankRequirements,
+              properties,
+              categoryWeights,
+              selectionId,
+              strategy
+            );
+
+      this.config.telemetry?.onModelSelected?.({
+        modelId: finalSelection.model,
+        selectionStrategy: strategy,
+        ...(finalSelection.selectionId !== undefined && {
+          selectionId: finalSelection.selectionId,
+        }),
+      });
 
       const responseTime = Date.now() - startTime;
 
-      // Track complete prompt request
       if (this.analytics) {
         this.analytics.trackPromptRequest({
           prompt,
@@ -164,7 +257,6 @@ export class AutoPromptRouter {
       this.logger.info('Model recommendation generated', { finalSelection });
       return finalSelection;
     } catch (error) {
-      // Track error
       if (this.analytics) {
         this.analytics.trackError({
           errorType: 'model_recommendation_failed',
@@ -179,31 +271,37 @@ export class AutoPromptRouter {
     }
   }
 
-  /**
-   * Get available models (for debugging/inspection)
-   */
+  async getModelRecommendations(
+    items: Array<{ prompt: string; properties: PromptProperties }>
+  ): Promise<ModelSelection[]> {
+    const results: ModelSelection[] = [];
+    for (const item of items) {
+      assertValidPrompt(item.prompt);
+      assertValidPromptProperties(item.properties);
+      results.push(
+        await this.getModelRecommendation(item.prompt, item.properties)
+      );
+    }
+    return results;
+  }
+
+  reportOutcome(selectionId: string, quality: OutcomeQuality): void {
+    this.outcomes.report(selectionId, quality);
+  }
+
   async getAvailableModels(): Promise<ModelProfile[]> {
     return await this.modelCache.getModelProfiles();
   }
 
-  /**
-   * Clear model cache
-   */
   clearCache(): void {
     this.modelCache.clearCache();
     this.logger.info('Model cache cleared');
   }
 
-  /**
-   * Get analytics status for monitoring
-   */
   getAnalyticsStatus() {
     return this.analytics ? this.analytics.getStatus() : { enabled: false };
   }
 
-  /**
-   * Graceful shutdown - flush analytics and cleanup resources
-   */
   async shutdown(): Promise<void> {
     if (this.analytics) {
       await this.analytics.shutdown();
@@ -211,18 +309,102 @@ export class AutoPromptRouter {
     }
   }
 
-  // Private methods
   private async classifyPrompt(prompt: string): Promise<PromptCategory> {
     return await PromptClassifier.classifyPrompt(prompt);
+  }
+
+  private pickPrimaryCategoryFromWeights(
+    weights: Partial<Record<PromptType, number>>
+  ): PromptCategory {
+    let best: PromptType = PromptType.General;
+    let bestScore = 0;
+
+    for (const [type, weight] of Object.entries(weights)) {
+      const w = weight ?? 0;
+      if (w > bestScore) {
+        bestScore = w;
+        best = type as PromptType;
+      }
+    }
+
+    return {
+      type: best,
+      confidence: Math.max(0.1, Math.min(0.95, bestScore)),
+    };
+  }
+
+  private blendedCapabilityScore(
+    profile: ModelProfile,
+    weights: Partial<Record<PromptType, number>>
+  ): number {
+    let sum = 0;
+    for (const [type, weight] of Object.entries(weights)) {
+      const w = weight ?? 0;
+      if (w <= 0) continue;
+      const key = type.toLowerCase() as keyof ModelProfile['capabilities'];
+      sum += w * profile.capabilities[key];
+    }
+    return sum;
+  }
+
+  private getDeterministicSelection(
+    profiles: ModelProfile[],
+    category: PromptCategory,
+    rankRequirements: ReturnType<typeof buildRankRequirementsFromProperties>,
+    properties: PromptProperties,
+    categoryWeights: Partial<Record<PromptType, number>> | undefined,
+    selectionId: string,
+    strategy: ModelSelectionStrategy
+  ): ModelSelection {
+    const qvc = properties.qualityVsCost ?? 0.5;
+
+    const ranking = this.config.multiLabelClassification
+      ? ModelProfiler.rankModelsForWeightedCategories(
+          profiles,
+          categoryWeights ?? { [category.type]: 1 },
+          rankRequirements,
+          qvc
+        )
+      : {
+          rankedModels: ModelProfiler.rankModelsForCategory(
+            profiles,
+            category.type,
+            rankRequirements
+          ).rankedModels,
+        };
+
+    const top = ranking.rankedModels[0];
+    if (!top) {
+      throw new Error('Deterministic ranking produced no candidates');
+    }
+
+    const confidence = Math.max(0.05, Math.min(0.95, top.score));
+
+    const selection: ModelSelection = {
+      model: top.model.id,
+      reason: top.reasoning,
+      confidence,
+      category,
+      selectionId,
+      selectionStrategy: strategy,
+    };
+
+    if (this.config.multiLabelClassification && categoryWeights) {
+      selection.categoryWeights = categoryWeights;
+    }
+
+    return selection;
   }
 
   private async getLLMDecisionWithProfiles(
     prompt: string,
     properties: PromptProperties,
     categoryProfiles: ModelProfile[],
-    category: PromptCategory
+    category: PromptCategory,
+    selectionId: string
   ): Promise<ModelSelection> {
-    // Create enhanced prompt with model profiles
+    const allowedIds = new Set(categoryProfiles.map(p => p.id));
+
     const profileInfo = categoryProfiles
       .map(profile => {
         const categoryScore =
@@ -245,9 +427,8 @@ export class AutoPromptRouter {
           confidence: Math.round(profile.profileConfidence * 100),
         };
       })
-      .sort((a, b) => b.categoryScore - a.categoryScore); // Sort by category performance
+      .sort((a, b) => b.categoryScore - a.categoryScore);
 
-    // Create system prompt with model profiles
     const selectionPrompt = `You are an expert LLM selection system. Based on the user's prompt and requirements, select the best model from the available profiles.
 
 PROMPT ANALYSIS:
@@ -255,11 +436,11 @@ PROMPT ANALYSIS:
 - User Input: "${prompt}"
 
 USER REQUIREMENTS:
-- Accuracy Priority: ${properties.accuracy}/1 (1 = highest accuracy needed)
-- Cost Sensitivity: ${properties.cost}/1 (1 = very cost-sensitive, 0 = cost no object)
-- Speed Priority: ${properties.speed}/1 (1 = fastest response needed)
-- Context Length: ${properties.tokenLimit} tokens minimum
-- Reasoning Required: ${properties.reasoning}
+- Accuracy priority: ${properties.accuracy}/1 (higher = need higher-quality outputs)
+- Cost budget: ${properties.cost}/1 (lower = more cost sensitive; higher = premium models allowed)
+- Speed priority: ${properties.speed}/1 (higher = prefer faster models)
+- Minimum context window: ${properties.tokenLimit} tokens
+- Reasoning required: ${properties.reasoning}
 
 AVAILABLE MODEL PROFILES (filtered for ${category.type} tasks):
 ${profileInfo
@@ -284,11 +465,12 @@ You must respond with valid JSON in this EXACT format:
   "confidence": 0.85
 }
 
-Important: The "model" field must exactly match one of the model IDs from the list above. and in response i do not want any extra char like \`\`\` json or any other char`;
+Important: The "model" field must exactly match one of the model IDs from the list above. Do not wrap the JSON in markdown fences.`;
 
     try {
-      // Make API call to selector model
-      const response = await fetch(
+      await this.rateLimiter.acquire();
+
+      const response = await fetchWithRetry(
         'https://openrouter.ai/api/v1/chat/completions',
         {
           method: 'POST',
@@ -299,7 +481,7 @@ Important: The "model" field must exactly match one of the model IDs from the li
           body: JSON.stringify({
             model: this.config.selectorModel,
             messages: [{ role: 'system', content: selectionPrompt }],
-            temperature: 0.1,
+            temperature: 0,
           }),
         }
       );
@@ -316,33 +498,73 @@ Important: The "model" field must exactly match one of the model IDs from the li
         throw new Error('No response content from LLM');
       }
 
-      // Parse LLM response
-      const selection = JSON.parse(llmResponse);
+      const selection = this.parseSelectorJson(llmResponse);
+
+      if (!allowedIds.has(selection.model)) {
+        throw new Error(
+          `Selector returned unknown model id: ${String(selection.model)}`
+        );
+      }
 
       return {
         model: selection.model,
         reason: selection.reason,
         confidence: selection.confidence,
         category,
+        selectionId,
+        selectionStrategy: 'llm',
       };
     } catch (error) {
       this.logger.error(
-        'LLM decision failed, falling back to first suitable model',
+        'LLM decision failed, falling back to highest deterministic candidate',
         error
       );
 
-      // Fallback to first suitable model
-      if (categoryProfiles.length === 0) {
+      const rankRequirements = buildRankRequirementsFromProperties(properties);
+      const ranking = ModelProfiler.rankModelsForCategory(
+        categoryProfiles,
+        category.type,
+        rankRequirements
+      );
+
+      const fallbackModel = ranking.rankedModels[0]?.model;
+      if (!fallbackModel) {
         throw new Error('No suitable models found for the given requirements');
       }
 
-      const fallbackModel = categoryProfiles[0];
-
       return {
-        model: fallbackModel?.id || '',
-        reason: `Fallback selection: ${fallbackModel?.name} (LLM selection failed)`,
+        model: fallbackModel.id,
+        reason: `Fallback selection: ${fallbackModel.name} (LLM selection failed)`,
         confidence: 0.5,
         category,
+        selectionId,
+        selectionStrategy: 'llm',
+      };
+    }
+  }
+
+  private parseSelectorJson(raw: string): {
+    model: string;
+    reason: string;
+    confidence: number;
+  } {
+    const trimmed = raw.trim();
+    try {
+      return JSON.parse(trimmed) as {
+        model: string;
+        reason: string;
+        confidence: number;
+      };
+    } catch {
+      const start = trimmed.indexOf('{');
+      const end = trimmed.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) {
+        throw new Error('Selector response was not valid JSON');
+      }
+      return JSON.parse(trimmed.slice(start, end + 1)) as {
+        model: string;
+        reason: string;
+        confidence: number;
       };
     }
   }
