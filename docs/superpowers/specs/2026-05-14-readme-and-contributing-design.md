@@ -1,6 +1,6 @@
 # README and contributing documentation — design spec
 
-**Status:** Approved for implementation  
+**Status:** Implemented (README + CONTRIBUTING)  
 **Date:** 2026-05-14  
 **Scope:** `README.md`, new `CONTRIBUTING.md`, cross-links to `/docs`. No application code changes unless README examples expose a bug.
 
@@ -91,11 +91,11 @@
 
 ## Consistency checklist (implementation pass)
 
-- [ ] Remove or replace any line implying **raw prompt** analytics storage.
-- [ ] Default selection: **deterministic**; LLM mode explicitly optional.
-- [ ] Dev instructions prefer **pnpm**; one-line npm equivalent where helpful.
-- [ ] `sample.ts` instructions match actual file (env vars, clone vs published import).
-- [ ] No contradictory statements between README, `CONTRIBUTING.md`, and `docs/api-reference.md` for the same option.
+- [x] Remove or replace any line implying **raw prompt** analytics storage.
+- [x] Default selection: **deterministic**; LLM mode explicitly optional.
+- [x] Dev instructions prefer **pnpm**; one-line npm equivalent where helpful.
+- [x] `sample.ts` instructions match actual file (env vars, clone vs published import).
+- [x] No contradictory statements between README, `CONTRIBUTING.md`, and `docs/api-reference.md` for the same option.
 
 ## Self-review (spec quality)
 

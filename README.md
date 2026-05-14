@@ -1,284 +1,215 @@
 # Auto Prompt Router to LLM
 
-Ever found yourself wondering which AI model to use for your specific task? Should you use GPT-4 for that complex coding problem, or would Claude be better for creative writing? This package takes the guesswork out of model selection.
+**auto-llm-selector** helps you pick an **OpenRouter model id** from a user prompt plus numeric priorities: it classifies the task, loads the live model catalog, applies **hard filters** (context, multimodal, tiers, optional allow/deny patterns), then ranks candidates. **Default selection is deterministic** (fast, reproducible). Set `selectionStrategy: 'llm'` if you want the optional legacy meta-LLM chooser instead.
 
-**Auto Prompt Router** intelligently analyzes your prompts and automatically selects the best language model based on what you're trying to accomplish, your performance needs, and your budget.
+## Who it is for
 
-## Why This Exists
+Teams already using (or planning to use) **OpenRouter** who want a small library: **prompt + `PromptProperties` → recommended model id** and human-readable metadata (`reason`, category, confidence, optional `selectionId`).
 
-With so many great AI models available (GPT-4, Claude, Gemini, Llama, etc.), choosing the right one for each task has become a real challenge. Each model has its strengths - some excel at coding, others at creative tasks. Some are lightning fast but less accurate, others are incredibly smart but slower and more expensive.
+**Requirements:** Node **≥ 16**, an [OpenRouter](https://openrouter.ai) API key, and network access for catalog/classification.
 
-This router solves that problem by:
-
-- Understanding what type of task you're doing (coding, writing, analysis, etc.)
-- Building capability profiles for **all models** exposed by OpenRouter’s catalog (with curated overrides for common models)
-- Enforcing hard constraints for context window, multimodal needs, and coarse cost/speed/accuracy tiers
-- Choosing a model using **deterministic ranking by default** (fast + reproducible), with an optional legacy LLM selector mode
-
-## Installation
+## Install
 
 ```bash
 npm install auto-llm-selector
 ```
 
-## Quick Example
+Equivalents: `pnpm add auto-llm-selector` · `yarn add auto-llm-selector`
 
-> simply run `npx tsx sample.ts` after cloning and check the output
+---
+
+## Use in your application
+
+Import from **`auto-llm-selector`** (published `dist/`). Call **`initialize()`** once before recommendations.
+
+```typescript
+import { AutoPromptRouter, type PromptProperties } from 'auto-llm-selector';
+
+const router = new AutoPromptRouter({
+  OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY!,
+  // selectionStrategy defaults to 'deterministic'
+});
+
+await router.initialize();
+
+const result = await router.getModelRecommendation(
+  'Help me fix this Python bug — my function keeps returning None',
+  {
+    accuracy: 0.9,
+    cost: 0.5,
+    speed: 0.7,
+    tokenLimit: 4000,
+    reasoning: true, // when true, only reasoning-capable models pass this step
+  } satisfies PromptProperties
+);
+
+console.log(result.model);
+console.log(result.reason);
+console.log(result.category.type, result.category.confidence);
+console.log(result.selectionStrategy ?? 'deterministic');
+if (result.selectionId) console.log('selectionId', result.selectionId);
+```
+
+The exact **model id** depends on OpenRouter’s current catalog and your properties, not on a fixed “always GPT-4” table.
+
+**More API surface** (details in [docs/api-reference.md](docs/api-reference.md) and [docs/how-it-works.md](docs/how-it-works.md)):
+
+- **`getModelRecommendations`** — batch multiple `{ prompt, properties }` pairs.
+- **`reportOutcome`** — optional in-process feedback keyed by `selectionId`.
+- **`multiLabelClassification`** — blend category weights instead of a single winning label.
+- **`allowedModelPatterns` / `excludedModelPatterns`** — OpenRouter-style wildcards (e.g. `anthropic/*`).
+- **`modelCatalogPersistentCachePath`** — JSON cache path for catalog fallback when the API is flaky.
+- **`telemetry`** — hooks such as `onModelSelected` for logging or experiments.
+
+---
+
+## Run the demo (`sample.ts`)
+
+To **see the router working** against the real OpenRouter catalog and embeddings, **clone this repo** (the demo is wired to local `./src` and is not shipped on npm the same way).
+
+```bash
+git clone https://github.com/Ayaan2907/auto-llm-selector.git
+cd auto-llm-selector
+pnpm install
+export OPEN_ROUTER_API_KEY="sk-or-..."
+pnpm exec tsx sample.ts
+```
+
+Optional environment variables used by the sample (see comments in `sample.ts`):
+
+- **`ENABLE_SAMPLE_ANALYTICS=1`** — opt in to sending analytics batches to the configured HTTPS endpoint.
+- **`SAMPLE_ALLOWED_PATTERNS`** — comma-separated patterns (e.g. `openai/*,anthropic/*`) to demo `allowedModelPatterns`.
+
+If you hit **`tfjs_binding.node` missing** errors after install, see [Troubleshooting](#troubleshooting) and [CONTRIBUTING.md](CONTRIBUTING.md) (native TensorFlow addon).
+
+---
+
+## How it works (short)
+
+1. **Classify** the prompt (hybrid embeddings + keywords; optional **multi-label** weighting).
+2. **Profile** models from OpenRouter’s catalog (curated overrides plus heuristics for unknown ids).
+3. **Hard-filter** by context window, multimodal flag, tier constraints, and optional allow/deny patterns.
+4. **Rank** with the default **deterministic** scorer, or with **`selectionStrategy: 'llm'`** via an extra chat completion to a selector model.
+
+---
+
+## What you get back
+
+Each **`ModelSelection`** includes:
+
+- **`model`** — OpenRouter model id to call next.
+- **`reason`** — short explanation of the ranking choice.
+- **`confidence`** — how strong the match is (0–1).
+- **`category`** — classified task type and confidence.
+- **`selectionStrategy`** — how the pick was made (`deterministic` or `llm`).
+- **`selectionId`** (optional) — stable id for **`reportOutcome`**.
+- **`categoryWeights`** (optional) — when multi-label mode is on, normalized category weights.
+
+## Task categories
+
+The classifier maps prompts toward categories such as **coding**, **creative**, **analytical**, **reasoning**, **conversational**, and **general** (see types and docs for the full enum).
+
+## Common imports
 
 ```typescript
 import {
   AutoPromptRouter,
   type RouterConfig,
   type PromptProperties,
-} from 'auto-llm-selector';
-
-// Set up the router
-const router = new AutoPromptRouter({
-  OPEN_ROUTER_API_KEY: 'your-api-key', // Get one from openrouter.ai
-});
-
-await router.initialize();
-
-// Ask for help with a coding problem
-const result = await router.getModelRecommendation(
-  'Help me fix this Python bug - my function keeps returning None',
-  {
-    accuracy: 0.9, // I need this to be right
-    cost: 0.5, // Moderate budget
-    speed: 0.7, // Fairly quick response needed
-    tokenLimit: 4000, // Not a huge response needed
-    reasoning: true, // This requires some thinking
-  }
-);
-
-console.log(`Best model: ${result.model}`);
-console.log(`Why: ${result.reason}`);
-// Might output: "Selected GPT-4 for its excellent coding capabilities and reasoning skills"
-```
-
-## Real-World Examples
-
-### When You Need Help Coding
-
-```typescript
-const codingHelp = await router.getModelRecommendation(
-  'Write a function to validate email addresses with regex',
-  {
-    accuracy: 0.95, // Code needs to be correct
-    cost: 0.4, // Keep costs reasonable
-    speed: 0.8, // Want a quick answer
-    tokenLimit: 3000,
-    reasoning: true, // Logic is important
-  }
-);
-// Likely picks: GPT-4 or Claude Sonnet (great at coding)
-```
-
-### Creative Writing Tasks
-
-```typescript
-const storyWriting = await router.getModelRecommendation(
-  'Write a short story about a robot learning to paint',
-  {
-    accuracy: 0.7, // Creativity over perfect grammar
-    cost: 0.3, // Budget-conscious
-    speed: 0.4, // Quality over speed
-    tokenLimit: 8000, // Longer creative content
-    reasoning: false, // Pure creativity
-  }
-);
-// Likely picks: Claude (excellent for creative tasks) or GPT-4
-```
-
-### Quick Questions
-
-```typescript
-const quickChat = await router.getModelRecommendation(
-  "What's the weather like in Tokyo right now?",
-  {
-    accuracy: 0.6, // Simple question
-    cost: 0.1, // Keep it cheap
-    speed: 0.9, // Want instant response
-    tokenLimit: 500,
-    reasoning: false,
-  }
-);
-// Likely picks: GPT-3.5-turbo or Claude Haiku (fast and cheap)
-```
-
-## How It Actually Works
-
-1. **Understanding your prompt**: hybrid semantic embeddings + keyword scoring (optional **multi-label** mode blends category weights).
-
-2. **Profiling models**: fetch OpenRouter’s `/models` list and derive per-model capability scores (curated map + heuristics for unknown IDs).
-
-3. **Hard filtering**: enforce minimum context window, multimodal constraints, wildcard allow/deny lists, and tier filters derived from your `accuracy` / `cost` / `speed` knobs.
-
-4. **Selection**: default **deterministic** ranking via `ModelProfiler` (no extra routing LLM call). Set `selectionStrategy: 'llm'` if you want the legacy meta-LLM chooser.
-
-5. **Optional feedback loop**: `ModelSelection.selectionId` + `router.reportOutcome(...)` stores lightweight in-process outcomes for your own evaluation pipelines.
-
-## What You Get Back
-
-Every recommendation includes:
-
-- **The best model** for your specific prompt and needs
-- **A clear explanation** of why this model was chosen
-- **Confidence scores** so you know how sure the system is
-- **Category classification** showing how your prompt was understood
-- **`selectionId`** (stable UUID) for optional outcome tracking via `reportOutcome`
-
-## Available Model Categories
-
-The router recognizes these types of tasks:
-
-- **Coding & Development** - Programming, debugging, code reviews, technical docs
-- **Creative Writing** - Stories, poems, creative content, marketing copy
-- **Data Analysis** - Research, comparisons, insights, business analysis
-- **Complex Reasoning** - Logic puzzles, math problems, strategic thinking
-- **Conversation** - Chat, Q&A, customer support, casual discussion
-- **General Knowledge** - Facts, explanations, how-to guides
-
-## Exports & Imports
-
-```typescript
-import {
-  // Main class - does all the intelligent routing
-  AutoPromptRouter,
-
-  // Core types for configuration and responses
-  type RouterConfig, // Settings for API key, model selection, logging, analytics
-  type PromptProperties, // Your requirements: accuracy, cost, speed, etc.
-  type ModelSelection, // The recommendation result with model and reasoning
-  type PromptCategory, // Classification result with type and confidence
-  type AnalyticsConfig, // Privacy-first analytics configuration options
-
-  // Advanced types (optional, for custom integrations)
-  type ModelProfile, // Complete model capability and characteristic data
-  type ModelCapabilities, // Scores for coding, creative, analytical, etc.
-  type ModelCharacteristics, // Speed, cost, accuracy tiers and provider info
-  type ModelInfo, // Raw model data from OpenRouter API
-
-  // Enums
-  PromptType, // Available categories: coding, creative, analytical, etc.
+  type ModelSelection,
+  type PromptCategory,
+  type ModelProfile,
+  PromptType,
 } from 'auto-llm-selector';
 ```
 
-**Most users only need**: `AutoPromptRouter`, `RouterConfig`, `PromptProperties`, and `ModelSelection`.
+Most integrations need **`AutoPromptRouter`**, **`RouterConfig`**, **`PromptProperties`**, and **`ModelSelection`**.
 
-## Getting Started
-
-1. **Get an API Key**: Sign up at [OpenRouter.ai](https://openrouter.ai) - they provide access to all the major AI models through one API
-2. **Install the package**: `npm install auto-llm-selector`
-3. **Try the examples** above to see how it works
-4. **Check out the full API docs** in the `/docs` folder
-
-## Configuration Options
+## Configuration example
 
 ```typescript
+import type { RouterConfig } from 'auto-llm-selector';
+
 const config: RouterConfig = {
-  OPEN_ROUTER_API_KEY: 'your-key', // Required
-  selectorModel: 'anthropic/claude-3-sonnet', // Optional: which model makes the selection
-  enableLogging: true, // Optional: see detailed logs
+  OPEN_ROUTER_API_KEY: process.env.OPEN_ROUTER_API_KEY!,
 
-  // Optional: Privacy-first analytics (opt-in)
-  analytics: {
-    enabled: true, // Must be explicitly enabled
-    collectPromptMetrics: true, // Prompt classification & model selection (COLLECTING RAW PROMPTS FOR TESTING PURPOSES, WILL BE REVERTED TO HASH SHORTLY)
-    collectModelPerformance: true, // Model response times & success rates
-    collectSemanticFeatures: true, // Classification confidence & embedding metrics
-    collectSystemInfo: true, // Anonymized platform info (Node version, OS)
-    debugMode: false, // Verbose analytics logging
-  },
+  // Default is 'deterministic'. Uncomment for legacy meta-LLM selection:
+  // selectionStrategy: 'llm',
+  // selectorModel: 'openai/gpt-4o-mini', // used only when strategy is 'llm'
+
+  enableLogging: true,
+
+  // Optional analytics — fully opt-in; prompts are hashed, not stored raw.
+  // Custom ingest URLs must use HTTPS (localhost http allowed for dev).
+  // analytics: {
+  //   enabled: true,
+  //   collectPromptMetrics: true,
+  //   collectModelPerformance: true,
+  //   collectSemanticFeatures: true,
+  //   collectSystemInfo: true,
+  //   endpointUrl: 'https://your.example/functions/v1/analytics',
+  //   apiKey: 'optional-bearer-for-your-endpoint',
+  // },
 };
 ```
 
-## Requirements
+## Verify locally (contributors)
 
-- Node.js 16 or higher
-- An OpenRouter API key (free tier available)
-- Internet connection (for model data and AI classification)
-
-## Development
+After cloning:
 
 ```bash
-# Get started
-npm install
-npm run build
-
-# Development mode
-npm run dev
-
-# Code quality
-npm run lint
-npm run typecheck
-npm run format
+pnpm run test:install
 ```
 
-## Environment Variables
+With dependencies already installed:
 
-Create a `.env` file and add the following:
+```bash
+pnpm run verify
+```
+
+More detail: **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+## Environment variables
+
+Typical local setup:
 
 ```text
 OPEN_ROUTER_API_KEY=your-key
 NODE_ENV=development
 ```
 
+You can also read keys in app code from your own secret store; the library does not require a `.env` file by itself.
+
 ## Troubleshooting
 
-### TensorFlow Dependencies
+### TensorFlow / `@tensorflow/tfjs-node`
 
-If you encounter TensorFlow-related errors:
+Classification uses TensorFlow.js native bindings. If install scripts were blocked:
 
 ```bash
-npm uninstall @tensorflow/tfjs-node @tensorflow-models/universal-sentence-encoder
-npm install @tensorflow/tfjs-node @tensorflow-models/universal-sentence-encoder
+pnpm approve-builds   # when pnpm asks to allow package build scripts
+pnpm install
 ```
 
-## Performance & Analytics
+If errors persist, try reinstalling the TensorFlow packages or matching your **Node version** to a build that provides a prebuilt binary for your OS. See also [CONTRIBUTING.md — First-time setup](CONTRIBUTING.md#first-time-setup).
 
-- **Classification Speed**: ~100-300ms for hybrid semantic + keyword analysis
-- **Selection Speed**: ~500-1500ms depending on selected LLM model
-- **Model Coverage**: 80+ models from OpenAI, Anthropic, Google, Meta, and others
-- **Cache Efficiency**: Model profiles cached for optimal performance
+## Performance and privacy
 
-### Privacy-First Analytics (Optional)
+- **Classification** is usually on the order of **tens to a few hundreds of ms** once embeddings are warm; the first run can be slower while models load.
+- **Selection** with the default **deterministic** path is local ranking after filters (no extra OpenRouter chat for routing). **`selectionStrategy: 'llm'`** adds a **chat completion** latency similar to any other OpenRouter call.
+- **Catalog** reflects whatever OpenRouter exposes at init time, cached with a TTL (and optional persistent JSON cache).
 
-When enabled, the router collects anonymized usage data to improve model recommendations:
+### Analytics (optional)
 
-- **🔒 Privacy-First**: Prompts are hashed (never stored as plain text)
-- **📊 Zero Performance Impact**: Async batch processing in background
-- **🎯 Opt-In Only**: Analytics disabled by default, must be explicitly enabled
-- **📈 Improves Recommendations**: Helps train better model selection algorithms
+If you enable **`analytics`**, events use **hashed** prompt content for metrics, batching, and opt-in behavior. Configure **`endpointUrl`** (HTTPS; localhost http allowed) and an optional **`apiKey`** for your own ingest. Do not enable analytics toward an endpoint you do not control unless you accept that metadata will leave your system.
 
-**What's collected:**
+## Curated vs live catalog
 
-- Prompt categories and classification confidence (hashed prompts only)
-- Model selection results and performance metrics
-- System information (Node version, platform - anonymized)
-- User fingerprint (based on system characteristics, no personal data)
-
-**What's NOT collected:**
-
-- Plain text prompts or responses
-- IP addresses or personal identifiers
-- API keys or sensitive configuration data
-
-## Supported Models
-
-The router includes pre-curated profiles for popular models from:
-
-- **OpenAI**: GPT-4, GPT-4-Turbo, GPT-4o, GPT-3.5-Turbo
-- **Anthropic**: Claude-3 (Opus, Sonnet, Haiku)
-- **Google**: Gemini Pro, Gemini Flash
-- **Meta**: Llama 3.1 (405B, 70B, 8B)
-- **Open Source**: Mixtral, Wizard, and many more
-
-Apart from these everytime we initialize the library new models are fetched from OpenRouter API and cached for optimal performance.
+Known models get **curated** capability hints; everything else is still ranked using **heuristics** from OpenRouter listing and pricing. On each **`initialize()`**, the catalog is refreshed according to cache TTL settings.
 
 ## Contributing
 
-Found a bug? Have an idea? Pull requests welcome! This is an open source project and we'd love your help making it better.
+Issues and pull requests are welcome. Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup, commands, code layout, and PR expectations.
 
 ## License
 
@@ -286,4 +217,4 @@ MIT © Ayaan Kaifullah
 
 ## Keywords
 
-Auto Prompt Router To LLM,
+auto-llm-selector, OpenRouter, model routing, prompt classification, LLM selection
