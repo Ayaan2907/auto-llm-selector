@@ -63,22 +63,34 @@ The exact **model id** depends on OpenRouter’s current catalog and your proper
 
 ---
 
-## Run the demo (`sample.ts`)
+## Quick start — `als try`
 
-To **see the router working** against the real OpenRouter catalog and embeddings, **clone this repo** (the demo is wired to local `./src` and is not shipped on npm the same way).
+The published package ships an interactive CLI so you can try the router without writing any code.
+
+```bash
+# Inside a project that depends on the package:
+npm install auto-llm-selector
+export OPEN_ROUTER_API_KEY="sk-or-..."
+npx als try                            # interactive wizard
+
+# Or, completely zero-install:
+npx auto-llm-selector try
+
+# Scriptable (no prompts; replaces what sample.ts used to do):
+npx als try --prompt "Refactor this regex" --preset coding --non-interactive
+```
+
+The wizard asks for the prompt and any unset `PromptProperties`, then narrates each router stage — catalog size, classified category, filter survivors with drop-reason breakdown, top-5 ranked candidates with scores, and the final selection. It ends by printing the equivalent TypeScript snippet you can paste into your own app.
+
+Contributors can run the same CLI against the working tree, with no build step:
 
 ```bash
 git clone https://github.com/Ayaan2907/auto-llm-selector.git
 cd auto-llm-selector
 pnpm install
 export OPEN_ROUTER_API_KEY="sk-or-..."
-pnpm exec tsx sample.ts
+pnpm try                               # tsx on src/, edits picked up immediately
 ```
-
-Optional environment variables used by the sample (see comments in `sample.ts`):
-
-- **`ENABLE_SAMPLE_ANALYTICS=1`** — opt in to sending analytics batches to the configured HTTPS endpoint.
-- **`SAMPLE_ALLOWED_PATTERNS`** — comma-separated patterns (e.g. `openai/*,anthropic/*`) to demo `allowedModelPatterns`.
 
 If you hit **`tfjs_binding.node` missing** errors after install, see [Troubleshooting](#troubleshooting) and [CONTRIBUTING.md](CONTRIBUTING.md) (native TensorFlow addon).
 
