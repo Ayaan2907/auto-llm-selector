@@ -42,6 +42,36 @@ export type RouterTelemetryHooks = {
     selectionStrategy: ModelSelectionStrategy;
     selectionId?: string;
   }) => void;
+
+  /** Fires once per recommendation after the model catalog is available. */
+  onCatalogLoaded?: (event: {
+    totalProfiles: number;
+    fromCache: boolean;
+    cacheAgeMs?: number;
+  }) => void;
+
+  /** Fires after the prompt is classified (single- or multi-label). */
+  onClassified?: (event: {
+    category: PromptCategory;
+    multiLabelWeights?: Partial<Record<PromptType, number>>;
+  }) => void;
+
+  /**
+   * Fires after each filter stage. `droppedReasons` is only populated for the
+   * `hard-filters` stage; the others are single-criterion.
+   */
+  onFilterStage?: (event: {
+    stage: 'reasoning' | 'category-threshold' | 'hard-filters';
+    before: number;
+    after: number;
+    droppedReasons?: Record<string, number>;
+  }) => void;
+
+  /** Fires once with the top-N ranked candidates just before final selection. */
+  onCandidatesRanked?: (event: {
+    strategy: ModelSelectionStrategy;
+    topN: Array<{ id: string; score: number; reason: string }>;
+  }) => void;
 };
 
 export interface RouterConfig {
