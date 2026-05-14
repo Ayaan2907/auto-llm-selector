@@ -7,7 +7,7 @@ import { ModelProfiler } from './lib/model-profiler.js';
 import { fetchWithRetry } from './http/retry-fetch.js';
 import { OpenRouterRateLimiter } from './http/openrouter-rate-limit.js';
 import {
-  applyHardFilters,
+  applyHardFiltersDetailed,
   type HardFilterOptions,
 } from './routing/hard-filters.js';
 import { buildRankRequirementsFromProperties } from './routing/requirements-from-properties.js';
@@ -76,6 +76,15 @@ export class AutoPromptRouter {
 
       const modelProfiles = await this.modelCache.getModelProfiles();
 
+      const lastFetchedAt = this.modelCache.getLastFetchedAt();
+      const cacheAgeMs =
+        lastFetchedAt > 0 ? Date.now() - lastFetchedAt : undefined;
+      this.config.telemetry?.onCatalogLoaded?.({
+        totalProfiles: modelProfiles.length,
+        fromCache: cacheAgeMs !== undefined && cacheAgeMs > 0,
+        ...(cacheAgeMs !== undefined && { cacheAgeMs }),
+      });
+
       this.isInitialized = true;
       this.logger.info('AutoPromptRouter initialized successfully');
 
@@ -127,6 +136,15 @@ export class AutoPromptRouter {
         `Retrieved ${allProfiles.length} model profiles from cache`
       );
 
+      const lastFetchedAt = this.modelCache.getLastFetchedAt();
+      const cacheAgeMs =
+        lastFetchedAt > 0 ? Date.now() - lastFetchedAt : undefined;
+      this.config.telemetry?.onCatalogLoaded?.({
+        totalProfiles: allProfiles.length,
+        fromCache: true,
+        ...(cacheAgeMs !== undefined && { cacheAgeMs }),
+      });
+
       let availableProfiles = allProfiles;
       if (properties.reasoning === true) {
         availableProfiles = allProfiles.filter(
@@ -135,6 +153,11 @@ export class AutoPromptRouter {
         this.logger.debug(
           `Filtered to ${availableProfiles.length} reasoning-capable models`
         );
+        this.config.telemetry?.onFilterStage?.({
+          stage: 'reasoning',
+          before: allProfiles.length,
+          after: availableProfiles.length,
+        });
       }
 
       const multiLabel = this.config.multiLabelClassification === true;
@@ -149,6 +172,13 @@ export class AutoPromptRouter {
       this.logger.info(
         `Prompt classified as: ${category.type} (confidence: ${category.confidence.toFixed(2)})`
       );
+
+      this.config.telemetry?.onClassified?.({
+        category,
+        ...(categoryWeights !== undefined && {
+          multiLabelWeights: categoryWeights,
+        }),
+      });
 
       const categoryKey =
         category.type.toLowerCase() as keyof ModelProfile['capabilities'];
@@ -175,6 +205,12 @@ export class AutoPromptRouter {
         `Filtered to ${categoryProfiles.length} models suitable for ${category.type}`
       );
 
+      this.config.telemetry?.onFilterStage?.({
+        stage: 'category-threshold',
+        before: availableProfiles.length,
+        after: categoryProfiles.length,
+      });
+
       if (categoryProfiles.length === 0) {
         throw new Error(
           `No suitable models found for category: ${category.type}`
@@ -191,11 +227,19 @@ export class AutoPromptRouter {
           this.config.excludedModelPatterns;
       }
 
-      const hardFiltered = applyHardFilters(
-        categoryProfiles,
-        properties,
-        hardFilterOptions
-      );
+      const { survivors: hardFiltered, droppedReasons } =
+        applyHardFiltersDetailed(
+          categoryProfiles,
+          properties,
+          hardFilterOptions
+        );
+
+      this.config.telemetry?.onFilterStage?.({
+        stage: 'hard-filters',
+        before: categoryProfiles.length,
+        after: hardFiltered.length,
+        droppedReasons,
+      });
 
       if (hardFiltered.length === 0) {
         throw new Error(
@@ -367,6 +411,13 @@ export class AutoPromptRouter {
           ).rankedModels,
         };
 
+    const topN = ranking.rankedModels.slice(0, 5).map(r => ({
+      id: r.model.id,
+      score: r.score,
+      reason: r.reasoning,
+    }));
+    this.config.telemetry?.onCandidatesRanked?.({ strategy, topN });
+
     const top = ranking.rankedModels[0];
     if (!top) {
       throw new Error('Deterministic ranking produced no candidates');
@@ -422,6 +473,15 @@ export class AutoPromptRouter {
         };
       })
       .sort((a, b) => b.categoryScore - a.categoryScore);
+
+    this.config.telemetry?.onCandidatesRanked?.({
+      strategy: 'llm',
+      topN: profileInfo.slice(0, 5).map(p => ({
+        id: p.id,
+        score: p.categoryScore / 100,
+        reason: `${category.type} ${p.categoryScore}% · ${p.speedTier}/${p.costTier}/${p.accuracyTier}`,
+      })),
+    });
 
     const selectionPrompt = `You are an expert LLM selection system. Based on the user's prompt and requirements, select the best model from the available profiles.
 

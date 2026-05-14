@@ -14,6 +14,11 @@ export default [
       },
       globals: {
         fetch: 'readonly',
+        Response: 'readonly',
+        Request: 'readonly',
+        Headers: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
         process: 'readonly',
         console: 'readonly',
         Buffer: 'readonly',
