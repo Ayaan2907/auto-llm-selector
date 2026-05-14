@@ -61,62 +61,123 @@ export type HardFilterOptions = {
   excludedModelPatterns?: string[];
 };
 
+export type HardFilterDropReason =
+  | 'multimodal'
+  | 'denyList'
+  | 'allowList'
+  | 'tokenLimit'
+  | 'costTier'
+  | 'speedTier'
+  | 'accuracyTier';
+
+export interface HardFilterResult {
+  survivors: ModelProfile[];
+  droppedReasons: Record<HardFilterDropReason, number>;
+}
+
+const ZERO_REASONS: Record<HardFilterDropReason, number> = {
+  multimodal: 0,
+  denyList: 0,
+  allowList: 0,
+  tokenLimit: 0,
+  costTier: 0,
+  speedTier: 0,
+  accuracyTier: 0,
+};
+
+interface FilterContext {
+  allowedModelPatterns: string[];
+  excludedModelPatterns: string[];
+  maxCostTierIdx: number;
+  minSpeedIdx: number;
+  minAccIdx: number;
+}
+
+function firstFailingReason(
+  profile: ModelProfile,
+  properties: PromptProperties,
+  ctx: FilterContext
+): HardFilterDropReason | null {
+  if (properties.multimodal === true && !profile.characteristics.isMultimodal) {
+    return 'multimodal';
+  }
+  if (
+    ctx.excludedModelPatterns.length > 0 &&
+    modelMatchesExcludedPatterns(profile.id, ctx.excludedModelPatterns)
+  ) {
+    return 'denyList';
+  }
+  if (
+    ctx.allowedModelPatterns.length > 0 &&
+    !modelMatchesAnyPattern(profile.id, ctx.allowedModelPatterns)
+  ) {
+    return 'allowList';
+  }
+  if (
+    Number.isFinite(properties.tokenLimit) &&
+    properties.tokenLimit > 0 &&
+    profile.contextLength < properties.tokenLimit
+  ) {
+    return 'tokenLimit';
+  }
+  if (costTierIndex(profile.characteristics.costTier) > ctx.maxCostTierIdx) {
+    return 'costTier';
+  }
+  if (
+    SPEED_ORDER.indexOf(profile.characteristics.speedTier) < ctx.minSpeedIdx
+  ) {
+    return 'speedTier';
+  }
+  if (
+    ACCURACY_ORDER.indexOf(profile.characteristics.accuracyTier) < ctx.minAccIdx
+  ) {
+    return 'accuracyTier';
+  }
+  return null;
+}
+
 /**
- * Hard filters that must pass before scoring or LLM selection.
+ * Hard filters that must pass before scoring or LLM selection. Returns survivors
+ * plus a per-reason count of drops (first failing constraint attribution).
+ */
+export function applyHardFiltersDetailed(
+  profiles: ModelProfile[],
+  properties: PromptProperties,
+  options: HardFilterOptions = {}
+): HardFilterResult {
+  const { allowedModelPatterns = [], excludedModelPatterns = [] } = options;
+  const ctx: FilterContext = {
+    allowedModelPatterns,
+    excludedModelPatterns,
+    maxCostTierIdx: maxCostTierIndexFromCost(properties.cost),
+    minSpeedIdx: minSpeedIndexFromSpeed(properties.speed),
+    minAccIdx: minAccuracyIndexFromAccuracy(properties.accuracy),
+  };
+
+  const survivors: ModelProfile[] = [];
+  const droppedReasons: Record<HardFilterDropReason, number> = {
+    ...ZERO_REASONS,
+  };
+
+  for (const profile of profiles) {
+    const reason = firstFailingReason(profile, properties, ctx);
+    if (reason === null) {
+      survivors.push(profile);
+    } else {
+      droppedReasons[reason] += 1;
+    }
+  }
+
+  return { survivors, droppedReasons };
+}
+
+/**
+ * Backwards-compatible thin wrapper returning only the survivors.
  */
 export function applyHardFilters(
   profiles: ModelProfile[],
   properties: PromptProperties,
   options: HardFilterOptions = {}
 ): ModelProfile[] {
-  const { allowedModelPatterns = [], excludedModelPatterns = [] } = options;
-
-  const maxCostTierIdx = maxCostTierIndexFromCost(properties.cost);
-  const minSpeedIdx = minSpeedIndexFromSpeed(properties.speed);
-  const minAccIdx = minAccuracyIndexFromAccuracy(properties.accuracy);
-
-  return profiles.filter(profile => {
-    if (
-      properties.multimodal === true &&
-      !profile.characteristics.isMultimodal
-    ) {
-      return false;
-    }
-
-    if (excludedModelPatterns.length > 0) {
-      if (modelMatchesExcludedPatterns(profile.id, excludedModelPatterns)) {
-        return false;
-      }
-    }
-
-    if (allowedModelPatterns.length > 0) {
-      if (!modelMatchesAnyPattern(profile.id, allowedModelPatterns)) {
-        return false;
-      }
-    }
-
-    if (
-      Number.isFinite(properties.tokenLimit) &&
-      properties.tokenLimit > 0 &&
-      profile.contextLength < properties.tokenLimit
-    ) {
-      return false;
-    }
-
-    if (costTierIndex(profile.characteristics.costTier) > maxCostTierIdx) {
-      return false;
-    }
-
-    const speedIdx = SPEED_ORDER.indexOf(profile.characteristics.speedTier);
-    if (speedIdx < minSpeedIdx) {
-      return false;
-    }
-
-    const accIdx = ACCURACY_ORDER.indexOf(profile.characteristics.accuracyTier);
-    if (accIdx < minAccIdx) {
-      return false;
-    }
-
-    return true;
-  });
+  return applyHardFiltersDetailed(profiles, properties, options).survivors;
 }
