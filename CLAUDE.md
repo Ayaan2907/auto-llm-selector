@@ -23,7 +23,8 @@ pnpm lint                 # eslint src/**/*.ts (use lint:fix to auto-fix)
 pnpm format               # prettier --write .
 pnpm verify               # test + typecheck + lint (run before pushing)
 pnpm test:install         # full install + verify (CI-equivalent local check)
-pnpm exec tsx sample.ts   # smoke test against the real OpenRouter API
+pnpm try                  # interactive CLI against working-tree src/ (no build)
+pnpm try --prompt "..." --preset coding --non-interactive   # scriptable smoke test
 ```
 
 Single-test runs go through `node --test` directly (the npm script globs everything):
@@ -32,7 +33,7 @@ Single-test runs go through `node --test` directly (the npm script globs everyth
 pnpm build && node --test --import tsx/esm test/hard-filters.test.ts
 ```
 
-`sample.ts` is a manual smoke harness, not part of the test suite — it requires `OPEN_ROUTER_API_KEY` (and optionally `ENABLE_SAMPLE_ANALYTICS=1`, `SAMPLE_ALLOWED_PATTERNS="anthropic/*,openai/*"`).
+`src/cli/` is the interactive try CLI. `pnpm try` runs it against the working tree via `tsx`; the published `npx als try` (or `npx auto-llm-selector try`) runs the bundled `dist/cli.js`. `--non-interactive` makes it scriptable for CI / smoke runs.
 
 ## TypeScript constraints that catch people
 
@@ -58,6 +59,8 @@ The router is a pipeline that runs inside `AutoPromptRouter.getModelRecommendati
 
 `KNOWN_MODEL_PROFILES` in `model-profiler.ts` is the curated capability map for well-known model ids; everything else gets heuristic priors derived from id/provider/pricing. These are routing priors, not benchmark numbers — when adding a new known model, edit this map.
 
+`src/cli/` is the interactive `als try` CLI; it composes `args.ts`, `wizard.ts`, `presets.ts`, `key-store.ts`, `renderer.ts`, and `snippet.ts`, subscribing to the router's optional telemetry hooks (`onCatalogLoaded`, `onClassified`, `onFilterStage`, `onCandidatesRanked`, `onModelSelected`) to narrate each pipeline stage.
+
 `src/training/router-dataset-recorder.ts` accumulates labeled samples for offline analysis; it's a side-channel and not on the hot path.
 
 ## Public API surface
@@ -69,7 +72,3 @@ The router is a pipeline that runs inside `AutoPromptRouter.getModelRecommendati
 - Husky `pre-commit` runs `pnpm pre-commit` → lint-staged (eslint --fix + prettier on staged JS/TS/JSON/MD/YAML).
 - `.github/workflows/publish.yml` runs `pnpm build` + `pnpm test` on push to `main`, then publishes to npm with `NPM_TOKEN`. Bumping `package.json#version` on `main` triggers a publish — coordinate version bumps deliberately.
 - Tests depend on a fresh build via the `pretest` script. If you change source and run a test directly with `node --test` (bypassing `pnpm test`), rebuild first or imports from `dist/` will be stale.
-
-## Sample.ts workaround (don't delete)
-
-`sample.ts` patches `util.isNullOrUndefined` before importing the router because Node 22+ removed it and `@tensorflow/tfjs-node` still calls it. If you're touching the sample or adding new entry points that load tfjs-node directly on Node 22+, keep that shim.
