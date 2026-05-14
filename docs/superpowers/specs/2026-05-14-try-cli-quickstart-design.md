@@ -36,10 +36,22 @@ These are all manifestations of the same gap: there is no first-class playground
 
 ## Distribution shape
 
-- **Bin entry:** `package.json#bin.als = "dist/cli.js"`.
+- **Bin entries:**
+  ```json
+  "bin": {
+    "als": "dist/cli.js",
+    "auto-llm-selector": "dist/cli.js"
+  }
+  ```
+  The `als` alias is short and easy to type once installed locally (`npx als try`, `pnpm als try`). The `auto-llm-selector` alias matches the package name so a zero-install one-off works as `npx auto-llm-selector try` without `npx --package=…` ceremony.
 - **Local-dev script:** `package.json#scripts.try = "tsx src/cli/index.ts try"` — runs against working-tree source, no build.
 - **Build:** `tsup.config.ts` gets a second entry, `src/cli/index.ts` → `dist/cli.js`, with a `#!/usr/bin/env node` banner and the output file marked executable.
 - **`files` field:** unchanged (`["dist"]`); the new bundle is shipped automatically.
+- **Consumer paths after this change:**
+  - Contributors (cloned repo): `pnpm try` → `tsx src/cli/index.ts try`. Edits to `src/` visible without rebuild.
+  - End users with the package installed in their project: `npx als try` / `pnpm exec als try` (uses `node_modules/.bin/als`).
+  - End users without installing: `npx auto-llm-selector try` (downloads the package, runs the bundled CLI).
+    All three paths execute the same wizard and pipeline narration; only the entrypoint differs (`src/` via tsx vs `dist/cli.js`).
 
 ## Library changes (additive, opt-in)
 
@@ -292,28 +304,28 @@ No test for the interactive wizard itself: piping fake input through a `@inquire
 
 ## File-level inventory of changes
 
-| File                             | Change                                                                           |
-| -------------------------------- | -------------------------------------------------------------------------------- |
-| `src/types.ts`                   | Add 4 optional hooks to `RouterTelemetryHooks`.                                  |
-| `src/router.ts`                  | Emit the new hooks at existing pipeline stage boundaries.                        |
-| `src/lib/tfjs-node22-shim.ts`    | **New.** Holds the `util.isNullOrUndefined` patch.                               |
-| `src/lib/semantic-classifier.ts` | Side-effect import of the shim at top.                                           |
-| `src/cli/index.ts`               | **New.** Shebang entrypoint, dispatches `try`.                                   |
-| `src/cli/args.ts`                | **New.** Manual parser.                                                          |
-| `src/cli/wizard.ts`              | **New.** @inquirer/prompts flow.                                                 |
-| `src/cli/presets.ts`             | **New.** PromptProperties presets.                                               |
-| `src/cli/renderer.ts`            | **New.** Picocolors pipeline narrator.                                           |
-| `src/cli/snippet.ts`             | **New.** TS-snippet emitter.                                                     |
-| `src/cli/key-store.ts`           | **New.** API-key resolution.                                                     |
-| `tsup.config.ts`                 | Add second entry, shebang banner, executable output.                             |
-| `package.json`                   | Add `bin.als`, add `scripts.try`, add deps `@inquirer/prompts` and `picocolors`. |
-| `sample.ts`                      | **Deleted.**                                                                     |
-| `test/cli-args.test.ts`          | **New.**                                                                         |
-| `test/cli-presets.test.ts`       | **New.**                                                                         |
-| `test/router-telemetry.test.ts`  | **New.**                                                                         |
-| `README.md`                      | Quick-start section replaces sample.ts section.                                  |
-| `CONTRIBUTING.md`                | Replace sample.ts references with `pnpm try`.                                    |
-| `CLAUDE.md`                      | Update commands and architecture sections.                                       |
+| File                             | Change                                                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `src/types.ts`                   | Add 4 optional hooks to `RouterTelemetryHooks`.                                                                        |
+| `src/router.ts`                  | Emit the new hooks at existing pipeline stage boundaries.                                                              |
+| `src/lib/tfjs-node22-shim.ts`    | **New.** Holds the `util.isNullOrUndefined` patch.                                                                     |
+| `src/lib/semantic-classifier.ts` | Side-effect import of the shim at top.                                                                                 |
+| `src/cli/index.ts`               | **New.** Shebang entrypoint, dispatches `try`.                                                                         |
+| `src/cli/args.ts`                | **New.** Manual parser.                                                                                                |
+| `src/cli/wizard.ts`              | **New.** @inquirer/prompts flow.                                                                                       |
+| `src/cli/presets.ts`             | **New.** PromptProperties presets.                                                                                     |
+| `src/cli/renderer.ts`            | **New.** Picocolors pipeline narrator.                                                                                 |
+| `src/cli/snippet.ts`             | **New.** TS-snippet emitter.                                                                                           |
+| `src/cli/key-store.ts`           | **New.** API-key resolution.                                                                                           |
+| `tsup.config.ts`                 | Add second entry, shebang banner, executable output.                                                                   |
+| `package.json`                   | Add `bin` map (`als` + `auto-llm-selector` aliases), add `scripts.try`, add deps `@inquirer/prompts` and `picocolors`. |
+| `sample.ts`                      | **Deleted.**                                                                                                           |
+| `test/cli-args.test.ts`          | **New.**                                                                                                               |
+| `test/cli-presets.test.ts`       | **New.**                                                                                                               |
+| `test/router-telemetry.test.ts`  | **New.**                                                                                                               |
+| `README.md`                      | Quick-start section replaces sample.ts section.                                                                        |
+| `CONTRIBUTING.md`                | Replace sample.ts references with `pnpm try`.                                                                          |
+| `CLAUDE.md`                      | Update commands and architecture sections.                                                                             |
 
 ## Risk and mitigation
 
