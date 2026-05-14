@@ -58,6 +58,7 @@ export class AutoPromptRouter {
         persistentCatalogPath: this.config.modelCatalogPersistentCachePath,
       }),
       rateLimiter: this.rateLimiter,
+      logHttpRetries: this.config.enableLogging !== false,
     });
 
     this.outcomes = new OutcomeFeedbackStore();
@@ -133,13 +134,6 @@ export class AutoPromptRouter {
         );
         this.logger.debug(
           `Filtered to ${availableProfiles.length} reasoning-capable models`
-        );
-      } else if (properties.reasoning === false) {
-        availableProfiles = allProfiles.filter(
-          profile => !profile.characteristics.isReasoning
-        );
-        this.logger.debug(
-          `Filtered to ${availableProfiles.length} non-reasoning models`
         );
       }
 
@@ -440,7 +434,7 @@ USER REQUIREMENTS:
 - Cost budget: ${properties.cost}/1 (lower = more cost sensitive; higher = premium models allowed)
 - Speed priority: ${properties.speed}/1 (higher = prefer faster models)
 - Minimum context window: ${properties.tokenLimit} tokens
-- Reasoning required: ${properties.reasoning}
+- Reasoning-capable models only: ${properties.reasoning ? 'yes' : 'no (no extra filter; any eligible model)'}
 
 AVAILABLE MODEL PROFILES (filtered for ${category.type} tasks):
 ${profileInfo
@@ -483,7 +477,8 @@ Important: The "model" field must exactly match one of the model IDs from the li
             messages: [{ role: 'system', content: selectionPrompt }],
             temperature: 0,
           }),
-        }
+        },
+        { logRetries: this.config.enableLogging !== false }
       );
 
       if (!response.ok) {

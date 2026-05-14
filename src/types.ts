@@ -7,7 +7,8 @@ export interface PromptProperties {
   speed: number; // 0-1: Speed requirement (0 = slow ok, 1 = need fast)
   /** Minimum context window (input + expected output) in tokens */
   tokenLimit: number;
-  reasoning: boolean; // Whether complex reasoning is required
+  /** When true, only models flagged as reasoning-capable are considered. `false` does not exclude them. */
+  reasoning: boolean;
   /** When true, only multimodal-capable models are considered */
   multimodal?: boolean;
   /**

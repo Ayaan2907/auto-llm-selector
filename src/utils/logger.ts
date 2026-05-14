@@ -3,7 +3,10 @@ const isServer =
   typeof global !== 'undefined' && typeof process !== 'undefined';
 
 export type LoggerOptions = {
-  /** When false, suppresses non-error logs (errors still emit for diagnostics). */
+  /**
+   * When false, suppresses routine logs (info/warn/debug).
+   * On the server, errors still emit; in the browser, errors are suppressed too.
+   */
   enabled?: boolean;
 };
 

@@ -19,6 +19,8 @@ export type ModelCacheOptions = {
   catalogCacheTtlMs?: number;
   persistentCatalogPath?: string;
   rateLimiter?: OpenRouterRateLimiter;
+  /** When false, OpenRouter catalog fetch retries do not emit RetryFetch warning logs */
+  logHttpRetries?: boolean;
 };
 
 class InMemoryModelCache {
@@ -27,6 +29,7 @@ class InMemoryModelCache {
   private readonly cacheTtlMs: number;
   private readonly persistentCatalogPath: string | undefined;
   private readonly rateLimiter: OpenRouterRateLimiter | undefined;
+  private readonly logHttpRetries: boolean;
   private OPEN_ROUTER_API_KEY = '';
 
   constructor(OPEN_ROUTER_API_KEY: string, options?: ModelCacheOptions) {
@@ -34,6 +37,7 @@ class InMemoryModelCache {
     this.cacheTtlMs = options?.catalogCacheTtlMs ?? DEFAULT_MODEL_CACHE_TTL_MS;
     this.persistentCatalogPath = options?.persistentCatalogPath;
     this.rateLimiter = options?.rateLimiter;
+    this.logHttpRetries = options?.logHttpRetries ?? true;
   }
 
   async getModelProfiles(): Promise<ModelProfile[]> {
@@ -128,7 +132,8 @@ class InMemoryModelCache {
             Authorization: `Bearer ${this.OPEN_ROUTER_API_KEY}`,
             'Content-Type': 'application/json',
           },
-        }
+        },
+        { logRetries: this.logHttpRetries }
       );
 
       if (!response.ok) {

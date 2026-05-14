@@ -1,4 +1,5 @@
 /* eslint-env node */
+import { URL } from 'node:url';
 import type { AnalyticsEvent, AnalyticsConfig } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { AnalyticsUtils } from './utils.js';
@@ -8,6 +9,26 @@ const logger = new Logger('AnalyticsQueue');
 
 const DEFAULT_ANALYTICS_ENDPOINT =
   'https://ucgblchamfvkillrznhk.supabase.co/functions/v1/analytics';
+
+function assertSecureAnalyticsEndpoint(url: string): void {
+  let parsed: InstanceType<typeof URL>;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('analytics.endpointUrl must be a valid URL');
+  }
+  const host = parsed.hostname.toLowerCase();
+  const local =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost');
+  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol === 'http:' && local) return;
+  throw new Error(
+    'analytics.endpointUrl must use HTTPS (http is allowed only for localhost)'
+  );
+}
 
 export class AnalyticsQueue {
   private queue: AnalyticsEvent[] = [];
@@ -33,6 +54,8 @@ export class AnalyticsQueue {
       endpointUrl: config.endpointUrl ?? DEFAULT_ANALYTICS_ENDPOINT,
       apiKey: config.apiKey,
     };
+
+    assertSecureAnalyticsEndpoint(this.config.endpointUrl);
 
     this.sessionId = AnalyticsUtils.generateSessionId();
     this.userFingerprint = AnalyticsUtils.generateUserFingerprint();

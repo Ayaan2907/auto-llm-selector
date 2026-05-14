@@ -1,14 +1,6 @@
-// simply install the package,
-// copy the file content
-//touch sample.ts
-// pass api key and run
-// npx tsx sample.ts and check the output for quick understanding
-
-// import {
-//   AutoPromptRouter,
-//   type RouterConfig,
-//   type PromptProperties,
-// } from './src/index.js';
+// Run from a clone of this repo (uses local source). For a published install, use:
+//   import { AutoPromptRouter, ... } from 'auto-llm-selector';
+// then pass your API key and run, e.g. `npx tsx sample.ts`
 
 import {
   AutoPromptRouter,

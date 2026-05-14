@@ -8,6 +8,8 @@ export type RetryFetchOptions = {
   baseDelayMs?: number;
   /** HTTP status codes that trigger a retry */
   retryOnStatuses?: number[];
+  /** When false, retry attempts do not emit warning logs */
+  logRetries?: boolean;
 };
 
 const DEFAULT_RETRY_STATUSES = [408, 429, 500, 502, 503, 504];
@@ -26,6 +28,7 @@ export async function fetchWithRetry(
 ): Promise<Awaited<ReturnType<typeof fetch>>> {
   const maxAttempts = options.maxAttempts ?? 4;
   const baseDelayMs = options.baseDelayMs ?? 1000;
+  const logRetries = options.logRetries !== false;
   const retryOnStatuses = new Set(
     options.retryOnStatuses ?? DEFAULT_RETRY_STATUSES
   );
@@ -38,9 +41,11 @@ export async function fetchWithRetry(
 
       if (retryOnStatuses.has(response.status) && attempt < maxAttempts) {
         const delay = baseDelayMs * 2 ** (attempt - 1);
-        logger.warn(
-          `HTTP ${response.status} on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms`
-        );
+        if (logRetries) {
+          logger.warn(
+            `HTTP ${response.status} on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms`
+          );
+        }
         await sleep(delay);
         continue;
       }
@@ -50,10 +55,12 @@ export async function fetchWithRetry(
       lastError = error;
       if (attempt < maxAttempts) {
         const delay = baseDelayMs * 2 ** (attempt - 1);
-        logger.warn(
-          `Network error on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms`,
-          error
-        );
+        if (logRetries) {
+          logger.warn(
+            `Network error on attempt ${attempt}/${maxAttempts}, retrying in ${delay}ms`,
+            error
+          );
+        }
         await sleep(delay);
         continue;
       }

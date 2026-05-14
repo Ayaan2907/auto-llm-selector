@@ -107,7 +107,7 @@ export class AnalyticsUtils {
   }
 
   /**
-   * Remove sensitive information from configuration
+   * Remove sensitive information from configuration (including nested analytics secrets).
    */
   static sanitizeConfig(config: Record<string, unknown>) {
     const sanitized = { ...config };
@@ -115,6 +115,20 @@ export class AnalyticsUtils {
     delete sanitized.apiKey;
     delete sanitized.key;
     delete sanitized.secret;
+
+    const analytics = sanitized.analytics;
+    if (
+      analytics &&
+      typeof analytics === 'object' &&
+      !Array.isArray(analytics)
+    ) {
+      const a = { ...(analytics as Record<string, unknown>) };
+      delete a.apiKey;
+      delete a.key;
+      delete a.secret;
+      sanitized.analytics = a;
+    }
+
     return sanitized;
   }
 }
