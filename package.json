@@ -10,6 +10,10 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "als": "dist/cli.js",
+    "auto-llm-selector": "dist/cli.js"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/ayaan2907/auto-llm-selector.git"
@@ -27,6 +31,7 @@
     "start": "node dist/index.js",
     "pretest": "pnpm run build",
     "test": "node --test --import tsx/esm test/**/*.test.ts",
+    "try": "tsx src/cli/index.ts try",
     "test:watch": "node --test --watch --import tsx/esm test/**/*.test.ts",
     "verify": "pnpm run test && pnpm run typecheck && pnpm run lint",
     "test:install": "pnpm install && pnpm run verify",
