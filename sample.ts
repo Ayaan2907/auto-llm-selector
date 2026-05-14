@@ -9,6 +9,19 @@
  * Type-only imports avoid loading TensorFlow until your API key is validated.
  */
 
+import { createRequire } from 'node:module';
+import * as nodeUtil from 'node:util';
+
+/** Node 22+ removed `util.isNullOrUndefined`; @tensorflow/tfjs-node still calls it. */
+const requireUtil = createRequire(import.meta.url);
+const utilCjs = requireUtil('util') as typeof nodeUtil & {
+  isNullOrUndefined?: (value: unknown) => boolean;
+};
+if (typeof utilCjs.isNullOrUndefined !== 'function') {
+  utilCjs.isNullOrUndefined = (value: unknown) =>
+    value === null || value === undefined;
+}
+
 import type {
   RouterConfig,
   PromptProperties,
@@ -100,9 +113,9 @@ async function main() {
   console.log(`Catalog: ${profiles.length} models cached.\n`);
 
   const codingPrompt: PromptProperties = {
-    accuracy: 0.9,
+    accuracy: 0.82,
     cost: 0.4,
-    speed: 0.6,
+    speed: 0.55,
     tokenLimit: 16_000,
     reasoning: true,
   };
