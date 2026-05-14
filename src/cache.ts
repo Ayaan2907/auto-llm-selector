@@ -62,6 +62,11 @@ class InMemoryModelCache {
     return this.profileCache.get(modelId);
   }
 
+  /** Epoch ms of the most recent successful fetch, or 0 if never fetched. */
+  getLastFetchedAt(): number {
+    return this.lastFetched;
+  }
+
   /**
    * Get profiles filtered by category performance
    */
