@@ -391,4 +391,129 @@ export class PromptClassifier {
     // Ensure minimum confidence and cap at reasonable maximum
     return Math.max(0.3, Math.min(confidence, 0.95));
   }
+
+  /**
+   * Returns a normalized distribution across categories for multi-label routing.
+   */
+  static async getCategoryWeightDistribution(
+    prompt: string
+  ): Promise<Partial<Record<PromptType, number>>> {
+    const keywordVector = this.computeKeywordScoreVector(prompt);
+
+    let semanticVector: Partial<Record<PromptType, number>> = {};
+    try {
+      const similarities =
+        await semanticClassifier.getDetailedSimilarities(prompt);
+      semanticVector = this.semanticSimilaritiesToWeights(similarities);
+    } catch (error) {
+      logger.debug('Semantic distribution unavailable, keyword-only weights', {
+        error,
+      });
+      semanticVector = { ...keywordVector };
+    }
+
+    const merged: Partial<Record<PromptType, number>> = {};
+    for (const type of Object.values(PromptType)) {
+      const kw = keywordVector[type] ?? 0;
+      const sm = semanticVector[type] ?? 0;
+      merged[type] =
+        kw * HYBRID_SCORING.KEYWORD_WEIGHT +
+        sm * HYBRID_SCORING.SEMANTIC_WEIGHT;
+    }
+
+    return this.normalizeWeights(merged);
+  }
+
+  private static computeKeywordScoreVector(
+    prompt: string
+  ): Partial<Record<PromptType, number>> {
+    const lowerPrompt = prompt.toLowerCase();
+    const raw = {
+      [PromptType.Coding]: this.calculateCategoryScore(
+        lowerPrompt,
+        CLASSIFICATION_KEYWORDS.coding
+      ),
+      [PromptType.Creative]: this.calculateCategoryScore(
+        lowerPrompt,
+        CLASSIFICATION_KEYWORDS.creative
+      ),
+      [PromptType.Analytical]: this.calculateCategoryScore(
+        lowerPrompt,
+        CLASSIFICATION_KEYWORDS.analytical
+      ),
+      [PromptType.Reasoning]: this.calculateCategoryScore(
+        lowerPrompt,
+        CLASSIFICATION_KEYWORDS.reasoning
+      ),
+      [PromptType.Conversational]: this.calculateCategoryScore(
+        lowerPrompt,
+        CLASSIFICATION_KEYWORDS.conversational
+      ),
+    };
+
+    const max = Math.max(...Object.values(raw), 0);
+    const vector: Partial<Record<PromptType, number>> = { ...raw };
+
+    vector[PromptType.General] =
+      max === 0 ? 1 : Math.max(0.05, 0.35 / (1 + max));
+
+    return this.normalizeWeights(vector);
+  }
+
+  private static semanticSimilaritiesToWeights(
+    similarities: Map<string, number>
+  ): Partial<Record<PromptType, number>> {
+    const vector: Partial<Record<PromptType, number>> = {};
+
+    for (const [key, value] of similarities.entries()) {
+      const type = this.mapKeyToPromptType(key);
+      const clamped = Math.max(0, value);
+      vector[type] = (vector[type] ?? 0) + clamped;
+    }
+
+    if (Object.keys(vector).length === 0) {
+      return { [PromptType.General]: 1 };
+    }
+
+    return this.normalizeWeights(vector);
+  }
+
+  private static mapKeyToPromptType(key: string): PromptType {
+    const normalized = key.toLowerCase();
+    switch (normalized) {
+      case 'coding':
+        return PromptType.Coding;
+      case 'creative':
+        return PromptType.Creative;
+      case 'analytical':
+        return PromptType.Analytical;
+      case 'reasoning':
+        return PromptType.Reasoning;
+      case 'conversational':
+        return PromptType.Conversational;
+      case 'general':
+        return PromptType.General;
+      default:
+        return PromptType.General;
+    }
+  }
+
+  private static normalizeWeights(
+    weights: Partial<Record<PromptType, number>>
+  ): Partial<Record<PromptType, number>> {
+    const sum = Object.values(weights).reduce((acc, v) => acc + (v ?? 0), 0);
+    if (sum <= 0) {
+      return { [PromptType.General]: 1 };
+    }
+
+    const normalized: Partial<Record<PromptType, number>> = {};
+    for (const [type, value] of Object.entries(weights)) {
+      const v = value ?? 0;
+      if (v > 0) {
+        normalized[type as PromptType] = v / sum;
+      }
+    }
+
+    return normalized;
+  }
 }

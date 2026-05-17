@@ -7,8 +7,10 @@ A detailed look at the intelligent routing process that powers Auto Prompt Route
 The router makes smart model selections through a multi-stage process combining AI classification, model profiling, and intelligent decision-making. Here's what happens when you call `getModelRecommendation()`:
 
 ```
-Your Prompt → Classification → Model Filtering → LLM Selection → Best Model
+Your Prompt → Classification → Hard Filters → Deterministic Ranking (default) → Best Model
 ```
+
+Optional legacy path: `selectionStrategy: 'llm'` uses a meta-LLM on OpenRouter to pick among candidates (slower, non-deterministic).
 
 ## Stage 1: Prompt Classification
 
@@ -30,18 +32,14 @@ The system uses two complementary methods to understand your prompt:
 - Fast and reliable for clear, explicit task indicators
 - Serves as a fallback when semantic analysis is unclear
 
-#### 3. Confidence-Based Combination
+#### 3. Hybrid combination
 
-```typescript
-// The system combines both approaches intelligently:
-if (semanticConfidence > 0.8) {
-  return semanticResult; // High confidence semantic match
-} else if (keywordConfidence > 0.7) {
-  return keywordResult; // Reliable keyword match
-} else {
-  return weightedAverage(semantic, keyword); // Combine both
-}
-```
+When `multiLabelClassification` is disabled (default), the router picks a single winning category:
+
+- If semantic + keyword agree, confidence is boosted slightly.
+- If they disagree, the winner is chosen using a **60% semantic / 40% keyword** confidence-weighted comparison (see `src/classifier.ts`).
+
+When `multiLabelClassification` is enabled, the router builds a **normalized weight vector** across categories by blending semantic similarity and keyword scores, then ranks models using a weighted blend of per-category capability scores.
 
 ### Classification Categories
 
@@ -58,16 +56,16 @@ Your prompt gets classified into one of these categories:
 
 ### Comprehensive Model Database
 
-We maintain detailed profiles for 80+ models with:
+The library builds profiles for **all models returned by OpenRouter’s `/models` endpoint**.
 
 #### Capability Scores (0-1 scale)
 
-Each model gets scored on all six categories based on:
+Each model gets scored on all six categories using:
 
-- Benchmark performance data
-- Real-world testing results
-- Community feedback and evaluations
-- Provider specifications and capabilities
+- A small curated map for a handful of well-known model IDs (`KNOWN_MODEL_PROFILES`)
+- Heuristic inference for everything else (provider/family cues + pricing-derived adjustments)
+
+These scores are **not** sourced from live benchmark leaderboards inside the library; they are best-effort priors meant for routing, not ground-truth evaluations.
 
 Example profile:
 
@@ -106,22 +104,14 @@ For new or unknown models, the system:
 
 ### Requirements-Based Filtering
 
-Before selection, models are filtered based on your `PromptProperties`:
+Before selection, models are filtered using **hard constraints** derived from `PromptProperties` (see `src/routing/hard-filters.ts`):
 
-```typescript
-// Only consider models that meet your minimum requirements
-const eligibleModels = allModels.filter(model => {
-  if (properties.reasoning && !model.characteristics.isReasoning) {
-    return false; // Skip models that can't reason when you need reasoning
-  }
+- `tokenLimit` requires `contextLength >= tokenLimit`
+- `cost`, `speed`, and `accuracy` map to discrete tier thresholds (cost tier, minimum speed tier, minimum accuracy tier)
+- Optional `multimodal: true` requires `isMultimodal`
+- Optional `allowedModelPatterns` / `excludedModelPatterns` apply OpenRouter-style wildcard filters
 
-  if (model.promptCostPerToken > calculateMaxCost(properties.cost)) {
-    return false; // Skip models outside your budget
-  }
-
-  return true; // Model meets requirements
-});
-```
+Additionally, the router enforces the existing category capability threshold (`>= 0.3` for the primary category, or a blended threshold when multi-label is enabled) and optional reasoning-model filtering.
 
 ### Category-Specific Filtering
 
@@ -134,40 +124,20 @@ const suitableModels = eligibleModels.filter(
 );
 ```
 
-## Stage 4: LLM-Powered Selection
+## Stage 4: Model selection
 
-### The Meta-AI Approach
+### Default: deterministic ranking (fast + reproducible)
 
-Here's where it gets interesting - we use an AI model to make the final selection! The system:
+By default (`selectionStrategy: 'deterministic'`), the router uses `ModelProfiler` ranking:
 
-1. **Prepares a detailed prompt** with:
-   - Your original prompt and requirements
-   - The classification results with confidence
-   - Filtered model profiles with capabilities and costs
-   - Explicit instructions for optimal selection
+- Single-label: `rankModelsForCategory(...)`
+- Multi-label: `rankModelsForWeightedCategories(...)`
 
-2. **Sends to a selector model** (GPT-4, Claude, or your choice):
+This avoids an extra LLM call for routing and makes selection stable for the same inputs and catalog snapshot.
 
-```typescript
-const selectionPrompt = `
-You are an expert LLM selection system. 
+### Optional: LLM-powered selection (`selectionStrategy: 'llm'`)
 
-USER'S TASK: "${prompt}"
-CLASSIFIED AS: ${category.type} (${category.confidence * 100}% confidence)
-
-REQUIREMENTS:
-- Accuracy Priority: ${properties.accuracy}/1
-- Cost Sensitivity: ${properties.cost}/1  
-- Speed Priority: ${properties.speed}/1
-- Reasoning Needed: ${properties.reasoning}
-
-AVAILABLE MODELS: [detailed model profiles...]
-
-Select the optimal model considering the user's priorities.
-`;
-```
-
-3. **Parses the structured response**:
+If enabled, the router sends a structured prompt to OpenRouter (`selectorModel`) and expects strict JSON:
 
 ```json
 {
@@ -177,13 +147,11 @@ Select the optimal model considering the user's priorities.
 }
 ```
 
-### Fallback Logic
+The returned `model` must exactly match one of the candidate IDs; otherwise the router falls back to deterministic ranking.
 
-If LLM selection fails (API error, invalid response, etc.):
+### Fallback logic
 
-1. Falls back to the highest-scoring model for the detected category
-2. Provides a clear explanation in the reasoning
-3. Sets confidence to a conservative 0.5
+If LLM selection fails (API error, invalid JSON, unknown model id), the router falls back to deterministic ranking from the same candidate set.
 
 ## Stage 5: Response Assembly
 
@@ -208,40 +176,23 @@ The final `ModelSelection` includes:
 - Model filtering happens concurrently with classification
 - TensorFlow operations are optimized for CPU/GPU acceleration
 
-### Smart Timeouts
+## Accuracy & reliability
 
-- Classification: 5-second timeout with keyword fallback
-- Selection: 15-second timeout with score-based fallback
-- Embedding generation: 10-second timeout per text
+Routing quality depends on:
 
-## Accuracy & Reliability
+- How representative your prompts are for the classifier’s categories
+- How accurate OpenRouter’s catalog metadata is at a given time
+- How well the heuristic capability priors match your workload
 
-### Classification Accuracy
+The library does **not** ship a benchmark-driven calibration loop. Optional analytics (explicitly enabled) can help you collect routing outcomes for offline evaluation.
 
-- **Semantic approach**: ~85-92% accuracy on diverse prompts
-- **Keyword approach**: ~75-85% accuracy on explicit prompts
-- **Hybrid system**: ~88-95% accuracy combining both methods
+## Continuous improvement (operational)
 
-### Selection Quality
+Practical improvement paths:
 
-- **User satisfaction**: 90%+ of users agree with selections in testing
-- **Performance correlation**: Selected models show 15-25% better task performance vs random selection
-- **Cost optimization**: Average 30% cost savings vs always using premium models
-
-### Confidence Calibration
-
-- High confidence predictions (>0.8) are correct 95%+ of the time
-- Medium confidence (0.6-0.8) are correct 85%+ of the time
-- Low confidence (<0.6) triggers conservative fallbacks
-
-## Continuous Learning
-
-The system improves through:
-
-- **Regular model profile updates** from benchmark results
-- **New model integration** as they become available
-- **Classification refinement** based on usage patterns
-- **Selection algorithm improvements** based on user feedback
+- Expand `KNOWN_MODEL_PROFILES` for models you care about most
+- Use `telemetry` hooks + `reportOutcome()` to build evaluation datasets
+- Use `RouterDatasetRecorder` to accumulate labeled samples for future training workflows
 
 ## Technical Architecture
 

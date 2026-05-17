@@ -1,19 +1,43 @@
 /* eslint-env node */
+import { URL } from 'node:url';
 import type { AnalyticsEvent, AnalyticsConfig } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { AnalyticsUtils } from './utils.js';
+import { fetchWithRetry } from '../http/retry-fetch.js';
 
 const logger = new Logger('AnalyticsQueue');
 
-// Hardcoded analytics endpoint - all library users send data here for ML training
-const SUPABASE_ANALYTICS_ENDPOINT =
+const DEFAULT_ANALYTICS_ENDPOINT =
   'https://ucgblchamfvkillrznhk.supabase.co/functions/v1/analytics';
+
+function assertSecureAnalyticsEndpoint(url: string): void {
+  let parsed: InstanceType<typeof URL>;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('analytics.endpointUrl must be a valid URL');
+  }
+  const host = parsed.hostname.toLowerCase();
+  const local =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '[::1]' ||
+    host.endsWith('.localhost');
+  if (parsed.protocol === 'https:') return;
+  if (parsed.protocol === 'http:' && local) return;
+  throw new Error(
+    'analytics.endpointUrl must use HTTPS (http is allowed only for localhost)'
+  );
+}
 
 export class AnalyticsQueue {
   private queue: AnalyticsEvent[] = [];
   private isProcessing = false;
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
-  private config: Required<AnalyticsConfig>;
+  private config: Required<Omit<AnalyticsConfig, 'endpointUrl' | 'apiKey'>> & {
+    endpointUrl: string;
+    apiKey: string | undefined;
+  };
   private sessionId: string;
   private userFingerprint: string;
 
@@ -27,7 +51,11 @@ export class AnalyticsQueue {
       batchSize: config.batchSize ?? 50,
       batchIntervalMs: config.batchIntervalMs ?? 5000,
       debugMode: config.debugMode ?? false,
+      endpointUrl: config.endpointUrl ?? DEFAULT_ANALYTICS_ENDPOINT,
+      apiKey: config.apiKey,
     };
+
+    assertSecureAnalyticsEndpoint(this.config.endpointUrl);
 
     this.sessionId = AnalyticsUtils.generateSessionId();
     this.userFingerprint = AnalyticsUtils.generateUserFingerprint();
@@ -40,9 +68,6 @@ export class AnalyticsQueue {
     }
   }
 
-  /**
-   * Add analytics event to processing queue (non-blocking)
-   */
   enqueue(event: Omit<AnalyticsEvent, 'timestamp' | 'sessionId'>): void {
     if (!this.config.enabled) return;
 
@@ -64,28 +89,20 @@ export class AnalyticsQueue {
     this.scheduleBatchFlush();
   }
 
-  /**
-   * Schedule batch processing with configurable intervals
-   */
   private scheduleBatchFlush(): void {
-    // Immediate flush if batch size reached
     if (this.queue.length >= this.config.batchSize) {
-      this.processBatch();
+      void this.processBatch();
       return;
     }
 
-    // Schedule flush if not already scheduled
     if (this.flushTimer) return;
 
     this.flushTimer = setTimeout(() => {
-      this.processBatch();
+      void this.processBatch();
       this.flushTimer = undefined;
     }, this.config.batchIntervalMs);
   }
 
-  /**
-   * Process and send analytics batch to backend
-   */
   private async processBatch(): Promise<void> {
     if (this.isProcessing || this.queue.length === 0) return;
 
@@ -108,22 +125,15 @@ export class AnalyticsQueue {
       }
     } catch (error) {
       logger.error('Analytics batch processing failed', error);
-
-      // TODO: Add retry logic with exponential backoff
-      // For now, events are lost on failure to prevent memory leaks
     } finally {
       this.isProcessing = false;
 
-      // Continue processing remaining queue
       if (this.queue.length > 0) {
         this.scheduleBatchFlush();
       }
     }
   }
 
-  /**
-   * Send analytics batch to Supabase backend
-   */
   private async sendAnalyticsBatch(events: AnalyticsEvent[]): Promise<void> {
     const payload = {
       events: events.map(event => ({
@@ -143,13 +153,23 @@ export class AnalyticsQueue {
       );
     }
 
-    const response = await fetch(SUPABASE_ANALYTICS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (this.config.apiKey) {
+      headers.Authorization = `Bearer ${this.config.apiKey}`;
+    }
+
+    const response = await fetchWithRetry(
+      this.config.endpointUrl,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+      { maxAttempts: 3, baseDelayMs: 1000 }
+    );
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -157,15 +177,11 @@ export class AnalyticsQueue {
         logger.error('Edge function error details:', errorBody);
       }
       throw new Error(
-        `Analytics upload failed: ${response.status} ${response.statusText} - 
-${errorBody}`
+        `Analytics upload failed: ${response.status} ${response.statusText} - ${errorBody}`
       );
     }
   }
 
-  /**
-   * Graceful shutdown - flush remaining analytics events
-   */
   async shutdown(): Promise<void> {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
@@ -177,9 +193,6 @@ ${errorBody}`
     }
   }
 
-  /**
-   * Get current queue status for monitoring
-   */
   getQueueStatus() {
     return {
       queueSize: this.queue.length,

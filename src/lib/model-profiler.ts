@@ -97,12 +97,12 @@ const KNOWN_MODEL_PROFILES: Record<
     coding: 0.75,
     creative: 0.8,
     analytical: 0.78,
-    reasoning: 0.8,
+    reasoning: 0.72,
     conversational: 0.85,
     general: 0.78,
     speedTier: 'ultra-fast',
     accuracyTier: 'good',
-    isReasoning: true,
+    isReasoning: false,
     isMultimodal: true,
   },
 
@@ -161,11 +161,84 @@ const KNOWN_MODEL_PROFILES: Record<
     coding: 0.7,
     creative: 0.65,
     analytical: 0.68,
-    reasoning: 0.7,
+    reasoning: 0.58,
     conversational: 0.7,
     general: 0.68,
     speedTier: 'fast',
     accuracyTier: 'good',
+    isReasoning: false,
+    isMultimodal: false,
+  },
+
+  'anthropic/claude-3.5-sonnet': {
+    coding: 0.9,
+    creative: 0.92,
+    analytical: 0.9,
+    reasoning: 0.9,
+    conversational: 0.9,
+    general: 0.9,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'anthropic/claude-3.5-haiku': {
+    coding: 0.82,
+    creative: 0.8,
+    analytical: 0.82,
+    reasoning: 0.78,
+    conversational: 0.88,
+    general: 0.82,
+    speedTier: 'ultra-fast',
+    accuracyTier: 'high',
+    isReasoning: false,
+    isMultimodal: true,
+  },
+  'openai/gpt-4o-2024-08-06': {
+    coding: 0.94,
+    creative: 0.9,
+    analytical: 0.92,
+    reasoning: 0.94,
+    conversational: 0.9,
+    general: 0.94,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'google/gemini-2.0-flash-001': {
+    coding: 0.84,
+    creative: 0.78,
+    analytical: 0.85,
+    reasoning: 0.82,
+    conversational: 0.8,
+    general: 0.84,
+    speedTier: 'ultra-fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'deepseek/deepseek-chat': {
+    coding: 0.88,
+    creative: 0.78,
+    analytical: 0.85,
+    reasoning: 0.86,
+    conversational: 0.8,
+    general: 0.85,
+    speedTier: 'fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+  'deepseek/deepseek-r1': {
+    coding: 0.85,
+    creative: 0.72,
+    analytical: 0.88,
+    reasoning: 0.96,
+    conversational: 0.75,
+    general: 0.82,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
     isReasoning: true,
     isMultimodal: false,
   },
@@ -192,6 +265,290 @@ const KNOWN_MODEL_PROFILES: Record<
     general: 0.75,
     speedTier: 'medium',
     accuracyTier: 'good',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+
+  // -- Recent flagship models (curated routing priors, not benchmark numbers) --
+  // These were missing from the curated map even though OpenRouter ships them.
+  // Marking them as reasoning-capable so they survive `properties.reasoning=true`.
+
+  // Anthropic Claude 4.x family
+  'anthropic/claude-sonnet-4': {
+    coding: 0.94,
+    creative: 0.91,
+    analytical: 0.93,
+    reasoning: 0.94,
+    conversational: 0.92,
+    general: 0.93,
+    speedTier: 'fast',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'anthropic/claude-sonnet-4.5': {
+    coding: 0.95,
+    creative: 0.92,
+    analytical: 0.94,
+    reasoning: 0.95,
+    conversational: 0.93,
+    general: 0.94,
+    speedTier: 'fast',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'anthropic/claude-opus-4': {
+    coding: 0.95,
+    creative: 0.94,
+    analytical: 0.95,
+    reasoning: 0.96,
+    conversational: 0.92,
+    general: 0.95,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'anthropic/claude-opus-4.1': {
+    coding: 0.96,
+    creative: 0.94,
+    analytical: 0.95,
+    reasoning: 0.97,
+    conversational: 0.92,
+    general: 0.95,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'anthropic/claude-opus-4.5': {
+    coding: 0.96,
+    creative: 0.94,
+    analytical: 0.96,
+    reasoning: 0.97,
+    conversational: 0.93,
+    general: 0.96,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'anthropic/claude-haiku-4.5': {
+    coding: 0.86,
+    creative: 0.82,
+    analytical: 0.84,
+    reasoning: 0.86,
+    conversational: 0.88,
+    general: 0.85,
+    speedTier: 'ultra-fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+
+  // OpenAI o-series reasoning models
+  'openai/o1': {
+    coding: 0.93,
+    creative: 0.85,
+    analytical: 0.95,
+    reasoning: 0.97,
+    conversational: 0.85,
+    general: 0.9,
+    speedTier: 'slow',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+  'openai/o3': {
+    coding: 0.94,
+    creative: 0.85,
+    analytical: 0.96,
+    reasoning: 0.97,
+    conversational: 0.85,
+    general: 0.91,
+    speedTier: 'slow',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+  'openai/o3-mini': {
+    coding: 0.88,
+    creative: 0.78,
+    analytical: 0.9,
+    reasoning: 0.92,
+    conversational: 0.8,
+    general: 0.84,
+    speedTier: 'medium',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+  'openai/o4-mini': {
+    coding: 0.9,
+    creative: 0.8,
+    analytical: 0.92,
+    reasoning: 0.93,
+    conversational: 0.82,
+    general: 0.86,
+    speedTier: 'medium',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+
+  // OpenAI GPT-5 family
+  'openai/gpt-5': {
+    coding: 0.95,
+    creative: 0.93,
+    analytical: 0.95,
+    reasoning: 0.96,
+    conversational: 0.93,
+    general: 0.95,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'openai/gpt-5-pro': {
+    coding: 0.97,
+    creative: 0.94,
+    analytical: 0.97,
+    reasoning: 0.97,
+    conversational: 0.94,
+    general: 0.96,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'openai/gpt-5-mini': {
+    coding: 0.88,
+    creative: 0.85,
+    analytical: 0.88,
+    reasoning: 0.89,
+    conversational: 0.87,
+    general: 0.87,
+    speedTier: 'fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'openai/gpt-5-codex': {
+    coding: 0.97,
+    creative: 0.82,
+    analytical: 0.92,
+    reasoning: 0.94,
+    conversational: 0.84,
+    general: 0.9,
+    speedTier: 'medium',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+
+  // OpenAI GPT-4.1 family
+  'openai/gpt-4.1': {
+    coding: 0.92,
+    creative: 0.88,
+    analytical: 0.91,
+    reasoning: 0.91,
+    conversational: 0.89,
+    general: 0.91,
+    speedTier: 'fast',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'openai/gpt-4.1-mini': {
+    coding: 0.86,
+    creative: 0.82,
+    analytical: 0.85,
+    reasoning: 0.85,
+    conversational: 0.85,
+    general: 0.85,
+    speedTier: 'fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+
+  // Google Gemini 2.5
+  'google/gemini-2.5-pro': {
+    coding: 0.92,
+    creative: 0.9,
+    analytical: 0.93,
+    reasoning: 0.93,
+    conversational: 0.9,
+    general: 0.92,
+    speedTier: 'fast',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+  'google/gemini-2.5-flash': {
+    coding: 0.85,
+    creative: 0.82,
+    analytical: 0.86,
+    reasoning: 0.86,
+    conversational: 0.85,
+    general: 0.85,
+    speedTier: 'ultra-fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+
+  // x-AI Grok 4
+  'x-ai/grok-4': {
+    coding: 0.9,
+    creative: 0.86,
+    analytical: 0.9,
+    reasoning: 0.92,
+    conversational: 0.85,
+    general: 0.88,
+    speedTier: 'fast',
+    accuracyTier: 'excellent',
+    isReasoning: true,
+    isMultimodal: true,
+  },
+
+  // DeepSeek R1 distillations
+  'deepseek/deepseek-r1-distill-llama-70b': {
+    coding: 0.82,
+    creative: 0.7,
+    analytical: 0.85,
+    reasoning: 0.9,
+    conversational: 0.74,
+    general: 0.78,
+    speedTier: 'fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+
+  // MiniMax / Moonshot reasoning models
+  'minimax/minimax-m2': {
+    coding: 0.85,
+    creative: 0.78,
+    analytical: 0.86,
+    reasoning: 0.9,
+    conversational: 0.78,
+    general: 0.82,
+    speedTier: 'fast',
+    accuracyTier: 'high',
+    isReasoning: true,
+    isMultimodal: false,
+  },
+  'moonshotai/kimi-k2-thinking': {
+    coding: 0.85,
+    creative: 0.78,
+    analytical: 0.87,
+    reasoning: 0.92,
+    conversational: 0.78,
+    general: 0.82,
+    speedTier: 'medium',
+    accuracyTier: 'high',
     isReasoning: true,
     isMultimodal: false,
   },
@@ -300,6 +657,79 @@ export class ModelProfiler {
     return ranking.rankedModels.length > 0
       ? (ranking.rankedModels[0]?.model ?? null)
       : null;
+  }
+
+  /**
+   * Rank models using a weighted blend of multiple prompt categories.
+   */
+  static rankModelsForWeightedCategories(
+    models: ModelProfile[],
+    weights: Partial<Record<PromptType, number>>,
+    requirements?: Parameters<typeof ModelProfiler.rankModelsForCategory>[2],
+    qualityVsCost?: number
+  ): {
+    rankedModels: { model: ModelProfile; score: number; reasoning: string }[];
+  } {
+    const entries = (Object.keys(weights) as PromptType[])
+      .map(type => [type, weights[type] ?? 0] as const)
+      .filter(([, w]) => w > 0);
+
+    const sumWeights = entries.reduce((acc, [, w]) => acc + w, 0) || 1;
+    const qvc = qualityVsCost ?? 0.5;
+
+    const rankedModels = models
+      .filter(model => this.meetsRequirements(model, requirements))
+      .map(model => {
+        let blended = 0;
+        for (const [type, w] of entries) {
+          blended += (w / sumWeights) * model.capabilities[type];
+        }
+
+        let score = blended;
+
+        if (requirements?.maxCost) {
+          const costRatio = model.promptCostPerToken / requirements.maxCost;
+          if (costRatio <= 0.5) score += 0.1;
+          else if (costRatio > 0.8) score -= 0.1;
+        }
+
+        const speedBonus = {
+          'ultra-fast': 0.05,
+          fast: 0.03,
+          medium: 0,
+          slow: -0.02,
+        }[model.characteristics.speedTier];
+        score += speedBonus;
+
+        const accuracyBonus = {
+          excellent: 0.1,
+          high: 0.05,
+          good: 0,
+          basic: -0.05,
+        }[model.characteristics.accuracyTier];
+        score += accuracyBonus * (0.55 + qvc * 0.45);
+
+        if (
+          (model.characteristics.costTier === 'free' ||
+            model.characteristics.costTier === 'cheap') &&
+          qvc < 0.55
+        ) {
+          score += 0.04;
+        }
+
+        if (model.contextLength >= 100000) score += 0.05;
+        else if (model.contextLength >= 32000) score += 0.02;
+
+        score *= model.profileConfidence;
+        score = Math.max(0, Math.min(1, score));
+
+        const reasoning = `${(blended * 100).toFixed(0)}% blended capability across ${entries.length} categories (${(score * 100).toFixed(0)}% overall)`;
+
+        return { model, score, reasoning };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    return { rankedModels: rankedModels.slice(0, 10) };
   }
 
   // Private helper methods
@@ -417,7 +847,7 @@ export class ModelProfiler {
         modelFamily,
         isReasoning:
           knownProfile.isReasoning ??
-          this.inferReasoningCapability(modelFamily),
+          this.inferReasoningCapability(modelInfo.id, modelFamily),
         isMultimodal:
           knownProfile.isMultimodal ??
           this.inferMultimodalCapability(modelInfo.id),
@@ -432,7 +862,7 @@ export class ModelProfiler {
       contextTier: this.inferContextTier(modelInfo.context_length),
       provider,
       modelFamily,
-      isReasoning: this.inferReasoningCapability(modelFamily),
+      isReasoning: this.inferReasoningCapability(modelInfo.id, modelFamily),
       isMultimodal: this.inferMultimodalCapability(modelInfo.id),
     };
   }
@@ -505,8 +935,36 @@ export class ModelProfiler {
     return 'small';
   }
 
-  private static inferReasoningCapability(modelFamily: string): boolean {
-    return ['gpt-4', 'claude-3', 'claude-2', 'llama-3', 'gemini'].some(family =>
+  /**
+   * Heuristic reasoning flag: prefer explicit model-id signals over broad families.
+   */
+  private static inferReasoningCapability(
+    modelId: string,
+    modelFamily: string
+  ): boolean {
+    const id = modelId.toLowerCase();
+
+    const explicitReasoning =
+      /\b(o1|o3|o4)\b/.test(id) ||
+      id.includes('deepseek-r1') ||
+      id.includes('deepseek/deepseek-r1') ||
+      id.includes('qwq') ||
+      id.includes('reasoner') ||
+      id.includes('thinking') ||
+      id.includes('r1-distill');
+
+    if (explicitReasoning) return true;
+
+    const tiny =
+      /\b(3b|7b|8b|1\.8b|2b)\b/.test(id) ||
+      id.includes('mini') ||
+      id.includes('nano') ||
+      id.includes('flash-lite') ||
+      id.includes('haiku');
+
+    if (tiny && !explicitReasoning) return false;
+
+    return ['gpt-4', 'claude-3', 'claude-2', 'gemini', 'llama-3'].some(family =>
       modelFamily.includes(family)
     );
   }

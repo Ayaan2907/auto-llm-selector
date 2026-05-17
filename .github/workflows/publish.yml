@@ -27,9 +27,8 @@ jobs:
       - name: Build package
         run: pnpm build
 
-      # Skip tests for now - test files not included in build
-      # - name: Run tests
-      #   run: pnpm test
+      - name: Run tests
+        run: pnpm test
 
   publish-npm:
     needs: build-and-test

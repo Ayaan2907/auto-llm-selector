@@ -46,8 +46,7 @@ export class AnalyticsCollector {
   }): void {
     if (!this.config.enabled || !this.config.collectPromptMetrics) return;
 
-    // const promptHash = AnalyticsUtils.generateContentHash(data.prompt);
-    const promptHash = data.prompt; // getting the prompt directyl for testing purposed for limited time
+    const promptHash = AnalyticsUtils.generateContentHash(data.prompt);
     const analyticsData = {
       promptHash,
       promptLength: data.prompt.length,

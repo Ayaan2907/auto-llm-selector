@@ -1,3 +1,4 @@
+import './tfjs-node22-shim.js';
 import '@tensorflow/tfjs-node';
 import * as use from '@tensorflow-models/universal-sentence-encoder';
 import { Logger } from '../utils/logger.js';
