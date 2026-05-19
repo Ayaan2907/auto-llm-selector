@@ -22,7 +22,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=18 <23"
+    "node": ">=18 <19 || >=20 <21 || >=22 <23"
   },
   "scripts": {
     "build": "tsup",
