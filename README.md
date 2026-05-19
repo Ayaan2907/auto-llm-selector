@@ -8,7 +8,7 @@ Teams already using (or planning to use) **OpenRouter** who want a small library
 
 **Requirements:**
 
-- **Node 18, 20, or 22** (the LTS line). Node 23+ is not yet supported because our semantic-classification dependency `@tensorflow/tfjs-node` does not ship prebuilt native binaries for Node 23/24/25. If you're on a newer Node, run `nvm install 22 && nvm use 22` before installing.
+- **Node 18, 20, or 22** (supported Node majors). Node 23+ is not yet supported because our semantic-classification dependency `@tensorflow/tfjs-node` does not ship prebuilt native binaries for Node 23/24/25. If you're on a newer Node, run `nvm install 22 && nvm use 22` before installing.
 - An [OpenRouter](https://openrouter.ai) API key.
 - Network access for catalog/classification.
 
