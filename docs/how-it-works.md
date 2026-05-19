@@ -4,10 +4,12 @@ A detailed look at the intelligent routing process that powers Auto Prompt Route
 
 ## Overview
 
-The router makes smart model selections through a multi-stage process combining AI classification, model profiling, and intelligent decision-making. Here's what happens when you call `getModelRecommendation()`:
+The router selects which OpenRouter model should back each **AI surface** in your application — agent chat, inline completion, planners, etc. You pass that surface’s **system prompt** plus a **budget** (`PromptProperties`); the library returns a model id. End-user messages are not the routing input.
+
+When you call `getModelRecommendation()`:
 
 ```
-Your Prompt → Classification → Hard Filters → Deterministic Ranking (default) → Best Model
+System prompt + budget → Classification → Hard Filters → Deterministic Ranking (default) → Best Model
 ```
 
 Optional legacy path: `selectionStrategy: 'llm'` uses a meta-LLM on OpenRouter to pick among candidates (slower, non-deterministic).
@@ -16,7 +18,7 @@ Optional legacy path: `selectionStrategy: 'llm'` uses a meta-LLM on OpenRouter t
 
 ### Hybrid Classification Approach
 
-The system uses two complementary methods to understand your prompt:
+The system uses two complementary methods to understand your **system prompt** (the role instructions for a surface):
 
 #### 1. Semantic Analysis
 
@@ -43,7 +45,7 @@ When `multiLabelClassification` is enabled, the router builds a **normalized wei
 
 ### Classification Categories
 
-Your prompt gets classified into one of these categories:
+Your **system prompt** gets classified into one of these categories:
 
 - **Coding** - Programming, debugging, technical implementation
 - **Creative** - Writing, storytelling, content creation

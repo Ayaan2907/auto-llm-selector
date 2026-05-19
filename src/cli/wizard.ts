@@ -35,13 +35,25 @@ export async function resolveRunConfig(
   const preset =
     args.preset ??
     (await select<PresetName | 'custom'>({
-      message: 'Use a preset?',
+      message: 'Preset for which surface?',
       choices: [
-        { name: 'coding', value: 'coding' as const },
-        { name: 'creative', value: 'creative' as const },
-        { name: 'quick', value: 'quick' as const },
-        { name: 'analytical', value: 'analytical' as const },
-        { name: 'custom', value: 'custom' as const },
+        {
+          name: 'coding — primary agent / IDE chat',
+          value: 'coding' as const,
+        },
+        {
+          name: 'quick — inline completion & micro-tasks',
+          value: 'quick' as const,
+        },
+        {
+          name: 'creative — in-app copy & content variants',
+          value: 'creative' as const,
+        },
+        {
+          name: 'analytical — planner / RAG / structured reasoning',
+          value: 'analytical' as const,
+        },
+        { name: 'custom — set knobs manually', value: 'custom' as const },
       ],
       default: 'custom' as const,
     }));
@@ -52,8 +64,9 @@ export async function resolveRunConfig(
   const prompt =
     args.prompt ??
     (await input({
-      message: 'Prompt:',
-      validate: v => (v.trim().length === 0 ? 'Prompt is required' : true),
+      message: 'System prompt for this surface:',
+      validate: v =>
+        v.trim().length === 0 ? 'System prompt is required' : true,
     }));
 
   const accuracy =
@@ -135,8 +148,8 @@ export async function resolveRepeatRun(
   base: PromptProperties
 ): Promise<RepeatRunInput> {
   const prompt = await input({
-    message: 'Prompt:',
-    validate: v => (v.trim().length === 0 ? 'Prompt is required' : true),
+    message: 'System prompt for this surface:',
+    validate: v => (v.trim().length === 0 ? 'System prompt is required' : true),
   });
   const accuracy = await askUnit('Accuracy (0-1)', base.accuracy);
   const cost = await askUnit('Cost (0-1)', base.cost);

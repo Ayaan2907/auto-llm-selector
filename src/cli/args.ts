@@ -191,8 +191,10 @@ export function parseTryArgs(argv: string[]): ParsedTryArgs {
 export function helpText(): string {
   return `als try [options]
 
-  --prompt <text>              Prompt text
+  --prompt <text>              System prompt (role instructions) for the surface
   --preset <name>              coding | creative | quick | analytical
+                               coding=agent chat · quick=inline completion ·
+                               analytical=planner/RAG · creative=copy variants
   --accuracy <0-1>
   --cost <0-1>
   --speed <0-1>

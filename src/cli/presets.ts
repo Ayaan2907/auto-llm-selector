@@ -1,6 +1,7 @@
 import type { PromptProperties } from '../types.js';
 import type { PresetName } from './args.js';
 
+/** Default PromptProperties budgets per internal AI surface (see README preset table). */
 export const PRESETS: Record<PresetName, PromptProperties> = {
   coding: {
     accuracy: 0.85,

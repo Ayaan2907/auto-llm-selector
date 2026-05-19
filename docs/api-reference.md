@@ -35,28 +35,31 @@ await router.initialize(); // Required!
 
 #### `getModelRecommendation(prompt: string, properties: PromptProperties): Promise<ModelSelection>`
 
-Gets the best model recommendation for your prompt and requirements.
+Gets the best model recommendation for a **system prompt** (role instructions for an AI surface in your app) and that surface’s requirements.
 
 **Parameters:**
 
-- `prompt: string` - The text you want to send to an AI model
-- `properties: PromptProperties` - Your requirements and preferences
+- `prompt: string` - System-level instructions for the surface (not an example end-user message)
+- `properties: PromptProperties` - Latency, cost, accuracy, and context budget for that surface
 
 **Returns:** `Promise<ModelSelection>` - The recommended model with reasoning
 
 **Example:**
 
 ```typescript
-const result = await router.getModelRecommendation(
-  'Write a Python function to parse JSON',
-  {
-    accuracy: 0.9,
-    cost: 0.5,
-    speed: 0.7,
-    tokenLimit: 3000,
-    reasoning: true,
-  }
-);
+const agentSystemPrompt = [
+  'You are the primary coding agent embedded in the IDE.',
+  'You see the active file, selection, and diagnostics.',
+  'Respond with concise guidance and minimal diffs.',
+].join(' ');
+
+const result = await router.getModelRecommendation(agentSystemPrompt, {
+  accuracy: 0.9,
+  cost: 0.5,
+  speed: 0.7,
+  tokenLimit: 16000,
+  reasoning: true,
+});
 ```
 
 #### `getAvailableModels(): Promise<ModelProfile[]>`

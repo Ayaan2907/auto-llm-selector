@@ -1,10 +1,14 @@
 # Auto Prompt Router to LLM
 
-**auto-llm-selector** helps you pick an **OpenRouter model id** from a user prompt plus numeric priorities: it classifies the task, loads the live model catalog, applies **hard filters** (context, multimodal, tiers, optional allow/deny patterns), then ranks candidates. **Default selection is deterministic** (fast, reproducible). Set `selectionStrategy: 'llm'` if you want the optional legacy meta-LLM chooser instead.
+**auto-llm-selector** picks an **OpenRouter model id** for each **AI surface inside your product** — not for one-off end-user chat messages like “help me debug this” or “what’s the return policy?”
+
+Pass the **system prompt** (or system + developer instruction bundle) that defines a role — main IDE chat, inline tab completion, background summarizer, tool planner, copy generator — together with that surface’s **latency, cost, accuracy, and context budget**. The router classifies that role, loads the live catalog, applies **hard filters**, then ranks survivors. **Default selection is deterministic** (fast, reproducible). Set `selectionStrategy: 'llm'` if you want the optional legacy meta-LLM chooser instead.
 
 ## Who it is for
 
-Teams already using (or planning to use) **OpenRouter** who want a small library: **prompt + `PromptProperties` → recommended model id** and human-readable metadata (`reason`, category, confidence, optional `selectionId`).
+Teams building **multi-model AI applications** on **OpenRouter** who need a small routing layer: **system prompt for a surface + `PromptProperties` → recommended model id**, plus metadata (`reason`, category, confidence, optional `selectionId`).
+
+Typical use: you already run several models internally (agent chat vs autocomplete vs planner) and want to **stop guessing** or using one flagship model for every call site.
 
 **Requirements:**
 
@@ -24,7 +28,9 @@ Equivalents: `pnpm add auto-llm-selector` · `yarn add auto-llm-selector`
 
 ## Use in your application
 
-Import from **`auto-llm-selector`** (published `dist/`). Call **`initialize()`** once before recommendations.
+Import from **`auto-llm-selector`** (published `dist/`). Call **`initialize()`** once, then call **`getModelRecommendation`** once per **surface** (or when a surface’s instructions or budget change).
+
+The first argument is the **system-level instructions** for that surface — the same text you would inject as `system` (or equivalent) before user messages arrive — not an example user utterance.
 
 ```typescript
 import { AutoPromptRouter, type PromptProperties } from 'auto-llm-selector';
@@ -36,25 +42,43 @@ const router = new AutoPromptRouter({
 
 await router.initialize();
 
-const result = await router.getModelRecommendation(
-  'Help me fix this Python bug — my function keeps returning None',
-  {
-    accuracy: 0.9,
-    cost: 0.5,
-    speed: 0.7,
-    tokenLimit: 4000,
-    reasoning: true, // when true, only reasoning-capable models pass this step
-  } satisfies PromptProperties
-);
+// Example: primary coding-agent chat surface (sidebar / Cmd+K), not a user question.
+const agentChatSystemPrompt = [
+  'You are the primary coding agent embedded in the IDE.',
+  'You receive the active file, selection, diagnostics, and recent edits.',
+  'Respond with concise, actionable guidance; prefer minimal diffs.',
+  'Do not invent APIs or files that are not in context.',
+].join(' ');
 
-console.log(result.model);
+const result = await router.getModelRecommendation(agentChatSystemPrompt, {
+  accuracy: 0.9,
+  cost: 0.5,
+  speed: 0.7,
+  tokenLimit: 16000,
+  reasoning: true, // when true, only reasoning-capable models pass this step
+} satisfies PromptProperties);
+
+console.log(result.model); // OpenRouter id to wire into this surface
 console.log(result.reason);
 console.log(result.category.type, result.category.confidence);
 console.log(result.selectionStrategy ?? 'deterministic');
 if (result.selectionId) console.log('selectionId', result.selectionId);
 ```
 
+Route other surfaces the same way — e.g. pass your **inline completion** system prompt with a `quick`-style budget (high speed, lower cost) and your **planner / tool-use** system prompt with an `analytical`-style budget.
+
 The exact **model id** depends on OpenRouter’s current catalog and your properties, not on a fixed “always GPT-4” table.
+
+### CLI presets → product surfaces
+
+| Preset           | Typical surface                                  | Budget shape                              |
+| ---------------- | ------------------------------------------------ | ----------------------------------------- |
+| **`coding`**     | Main agent / IDE chat / code review              | Higher accuracy, reasoning, large context |
+| **`quick`**      | Inline tab completion, titles, micro-classifiers | Latency-first, smaller context            |
+| **`analytical`** | Planner, RAG synthesis, structured tool routing  | High accuracy, reasoning, moderate speed  |
+| **`creative`**   | In-app copy, variants, UX strings                | Balanced cost; reasoning usually off      |
+
+Use `als try --preset …` with a **representative system prompt** for the surface you are wiring up.
 
 **More API surface** (details in [docs/api-reference.md](docs/api-reference.md) and [docs/how-it-works.md](docs/how-it-works.md)):
 
@@ -80,11 +104,11 @@ npx als try                            # interactive wizard
 # Or, completely zero-install:
 npx auto-llm-selector try
 
-# Scriptable (no prompts; replaces what sample.ts used to do):
-npx als try --prompt "Refactor this regex" --preset coding --non-interactive
+# Scriptable — pass a system prompt for the surface you are routing:
+npx als try --prompt "You are the primary coding agent in the IDE. You see the active file, selection, and diagnostics. Reply with concise, actionable guidance and minimal diffs." --preset coding --non-interactive
 ```
 
-The wizard asks for the prompt and any unset `PromptProperties`, then narrates each router stage — catalog size, classified category, filter survivors with drop-reason breakdown, top-5 ranked candidates with scores, and the final selection. It ends by printing the equivalent TypeScript snippet you can paste into your own app.
+The wizard asks for the **system prompt** and any unset `PromptProperties`, then narrates each router stage — catalog size, classified category, filter survivors with drop-reason breakdown, top-5 ranked candidates with scores, and the final selection. It ends by printing the equivalent TypeScript snippet you can paste into your own app.
 
 Contributors can run the same CLI against the working tree, with no build step:
 
@@ -102,12 +126,14 @@ If you hit **`tfjs_binding.node` missing** errors after install, see [Troublesho
 
 ## Sample CLI runs
 
-Real captures from `npx als try --non-interactive` against the current OpenRouter catalog (364 models at the time of recording). The CLI narrates every pipeline stage so you can see _why_ a model was selected.
+Examples below use **system prompts for internal surfaces**, not sample user messages. Captures are from `npx als try --non-interactive` against a live OpenRouter catalog; exact model ids and counts change as the catalog updates. The CLI narrates every pipeline stage so you can see _why_ a model was selected.
 
-### Coding preset — `--preset coding`
+### Agent chat — `--preset coding`
+
+Route the **primary coding-agent** system prompt (sidebar / Cmd+K style):
 
 ```
-$ npx als try --prompt "Refactor this regex to ASCII-only" --preset coding --non-interactive
+$ npx als try --prompt "You are the primary coding agent embedded in the IDE. You receive the active file, selection, diagnostics, and recent edits. Respond with concise, actionable guidance; prefer minimal diffs. Do not invent APIs." --preset coding --non-interactive
 
 ▸ catalog: 364 profiles loaded (0ms)
 ▸ reasoning filter        : 364 → 68
@@ -123,13 +149,15 @@ $ npx als try --prompt "Refactor this regex to ASCII-only" --preset coding --non
 ▸ selected: anthropic/claude-sonnet-4.5  (selectionId: dd79a51b…)
 ```
 
-### Quick chat — `--preset quick`
+### Inline completion — `--preset quick`
+
+Route the **fill-in-the-middle / tab completion** system prompt — a different surface, different budget:
 
 ```
-$ npx als try --prompt "Hi quick question about return policy" --preset quick --non-interactive
+$ npx als try --prompt "You are an inline fill-in-the-middle code completion engine. Given PREFIX and SUFFIX, output only the middle tokens. No prose, no markdown fences unless completing inside a string. Match indentation and style exactly." --preset quick --non-interactive
 
 ▸ catalog: 364 profiles loaded (0ms)
-▸ classified: general (71%)
+▸ classified: coding (62%)
 ▸ category threshold ≥0.3 : 364 → 361
 ▸ hard filters            : 361 → 21  1 by tokenLimit · 3 by costTier · 287 by speedTier · 49 by accuracyTier
 ▸ ranked top 5 (deterministic):
@@ -137,10 +165,12 @@ $ npx als try --prompt "Hi quick question about return policy" --preset quick --
 ▸ selected: google/gemini-2.0-flash-001  (selectionId: fc16a70c…)
 ```
 
-### Multi-label classification — mixed-intent prompt
+### Multi-label — hybrid agent system prompt
+
+Some surfaces blend roles (pair-programming + product Q&A). Pass the combined system instructions and enable **`--multi-label`**:
 
 ```
-$ npx als try --prompt "Help me debug some Python and brainstorm marketing copy" \
+$ npx als try --prompt "You are a pair-programming copilot embedded in the product. When the user asks to change code, output minimal patches. When they ask about architecture or behavior, cite files from context. Keep answers short unless asked to expand." \
     --accuracy 0.7 --cost 0.4 --speed 0.6 --token-limit 4000 \
     --multi-label --non-interactive
 
@@ -153,9 +183,11 @@ The classifier returns a normalized weight vector across all categories; ranking
 
 ### Wildcard allow-list — `--allow "anthropic/*"`
 
+Restrict a **read-only SQL assistant** surface to Anthropic models only:
+
 ```
-$ npx als try --prompt "Write a SQL query to find duplicate rows by email" \
-    --preset coding --allow "anthropic/*" --non-interactive
+$ npx als try --prompt "You are a read-only SQL assistant in an analytics dashboard. Generate SELECT queries against the documented schema only. Never emit DDL, mutations, or queries against tables not in the schema appendix." \
+    --preset analytical --allow "anthropic/*" --non-interactive
 
 ▸ reasoning filter        : 364 → 68
 ▸ hard filters            : 68 → 3  62 by allowList · 3 by speedTier
@@ -168,10 +200,10 @@ $ npx als try --prompt "Write a SQL query to find duplicate rows by email" \
 
 ### Zero-survivor coaching — when filters over-constrain
 
-Cranking every knob to 1.0 with both `reasoning` and `multimodal` produces an empty candidate set. Instead of a bare error, the CLI surfaces the biggest blocker:
+Over-tightening a **vision + reasoning agent** surface’s budget produces an empty candidate set. The CLI surfaces the biggest blocker instead of a bare error:
 
 ```
-$ npx als try --prompt "I need a function to generate random palindromes in Rust" \
+$ npx als try --prompt "You are a multimodal code-review agent. You receive source files and UI screenshots. Flag accessibility regressions and suggest minimal CSS fixes." \
     --accuracy 1 --cost 1 --speed 1 --token-limit 16000 \
     --reasoning --multimodal --strategy llm --multi-label --non-interactive
 
@@ -189,7 +221,7 @@ $ npx als try --prompt "I need a function to generate random palindromes in Rust
 For comparison with the deterministic ranker, `--strategy llm` sends the candidate list to a meta-LLM (defaults to `openai/gpt-4o-mini`) and parses the JSON pick:
 
 ```
-$ npx als try --prompt "Same palindromes prompt, sensible knobs" \
+$ npx als try --prompt "You are the tool-planning stage of an agent. Given the user goal and prior tool results, emit the next action as strict JSON: { tool, arguments }." \
     --accuracy 0.85 --cost 0.6 --speed 0.6 --token-limit 16000 \
     --reasoning --strategy llm --multi-label --non-interactive
 
@@ -212,9 +244,18 @@ const router = new AutoPromptRouter({
 });
 await router.initialize();
 
+const inlineCompletionSystemPrompt =
+  'You are an inline fill-in-the-middle code completion engine. Given PREFIX and SUFFIX, output only the middle tokens.';
+
 const result = await router.getModelRecommendation(
-  'Refactor this regex to ASCII-only',
-  { accuracy: 0.85, cost: 0.45, speed: 0.6, tokenLimit: 16000, reasoning: true }
+  inlineCompletionSystemPrompt,
+  {
+    accuracy: 0.55,
+    cost: 0.15,
+    speed: 0.85,
+    tokenLimit: 4000,
+    reasoning: false,
+  }
 );
 console.log(result.model);
 ```
@@ -223,7 +264,7 @@ console.log(result.model);
 
 ## How it works (short)
 
-1. **Classify** the prompt (hybrid embeddings + keywords; optional **multi-label** weighting).
+1. **Classify** the system prompt (hybrid embeddings + keywords; optional **multi-label** weighting).
 2. **Profile** models from OpenRouter’s catalog (curated overrides plus heuristics for unknown ids).
 3. **Hard-filter** by context window, multimodal flag, tier constraints, and optional allow/deny patterns.
 4. **Rank** with the default **deterministic** scorer, or with **`selectionStrategy: 'llm'`** via an extra chat completion to a selector model.
@@ -244,7 +285,7 @@ Each **`ModelSelection`** includes:
 
 ## Task categories
 
-The classifier maps prompts toward categories such as **coding**, **creative**, **analytical**, **reasoning**, **conversational**, and **general** (see types and docs for the full enum).
+The classifier maps **system prompts** toward categories such as **coding**, **creative**, **analytical**, **reasoning**, **conversational**, and **general** (see types and docs for the full enum). These describe the _role_ of the surface, not a single user utterance.
 
 ## Common imports
 

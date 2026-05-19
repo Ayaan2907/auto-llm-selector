@@ -100,7 +100,7 @@ async function main(): Promise<number> {
   let lastProps = firstCfg.properties;
   while (args.repeat && !args.nonInteractive) {
     const again = await confirm({
-      message: 'Try another prompt?',
+      message: 'Try another system prompt?',
       default: false,
     });
     if (!again) break;
