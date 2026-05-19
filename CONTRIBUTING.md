@@ -22,10 +22,11 @@ pnpm install
 
 ### Native TensorFlow addon (`@tensorflow/tfjs-node`)
 
-Semantic features depend on `@tensorflow/tfjs-node`. If `pnpm install` skipped optional build scripts, you may see errors about `tfjs_binding.node` when you run tests or `pnpm try`.
+Semantic features depend on `@tensorflow/tfjs-node`, which ships prebuilt binaries up to Node 22 (NAPI v8). On Node 23/24/25 you will see `Error: The Node.js native addon module (tfjs_binding.node) can not be found`.
 
-- Try allowing installs with scripts (e.g. `pnpm approve-builds` when prompted), or follow the [Troubleshooting](README.md#troubleshooting) section in the README.
-- On some platforms you may need a rebuild or a Node version that matches a published prebuild for `tfjs-node`.
+- **Use Node 18, 20, or 22.** `nvm install 22 && nvm use 22` then reinstall.
+- If `pnpm install` skipped optional build scripts, allow them with `pnpm approve-builds` and reinstall.
+- See [Troubleshooting](README.md#troubleshooting) in the README for more.
 
 ## Commands
 

@@ -6,7 +6,11 @@
 
 Teams already using (or planning to use) **OpenRouter** who want a small library: **prompt + `PromptProperties` → recommended model id** and human-readable metadata (`reason`, category, confidence, optional `selectionId`).
 
-**Requirements:** Node **≥ 16**, an [OpenRouter](https://openrouter.ai) API key, and network access for catalog/classification.
+**Requirements:**
+
+- **Node 18, 20, or 22** (supported Node majors). Node 23+ is not yet supported because our semantic-classification dependency `@tensorflow/tfjs-node` does not ship prebuilt native binaries for Node 23/24/25. If you're on a newer Node, run `nvm install 22 && nvm use 22` before installing.
+- An [OpenRouter](https://openrouter.ai) API key.
+- Network access for catalog/classification.
 
 ## Install
 
@@ -317,14 +321,29 @@ You can also read keys in app code from your own secret store; the library does 
 
 ### TensorFlow / `@tensorflow/tfjs-node`
 
-Classification uses TensorFlow.js native bindings. If install scripts were blocked:
+Classification uses TensorFlow.js native bindings. The most common failure is a Node-version mismatch:
+
+```
+Error: The Node.js native addon module (tfjs_binding.node) can not be found at path:
+.../@tensorflow/tfjs-node/lib/napi-v8/tfjs_binding.node
+```
+
+**Fix:** use Node 18, 20, or 22. `@tensorflow/tfjs-node@4.22.x` only ships prebuilt binaries up to Node 22 (NAPI v8). Node 23/24/25 are not yet supported by the upstream package.
+
+```bash
+nvm install 22
+nvm use 22
+# then re-run npx auto-llm-selector try (or your install)
+```
+
+If install scripts were blocked rather than the Node version being wrong:
 
 ```bash
 pnpm approve-builds   # when pnpm asks to allow package build scripts
 pnpm install
 ```
 
-If errors persist, try reinstalling the TensorFlow packages or matching your **Node version** to a build that provides a prebuilt binary for your OS. See also [CONTRIBUTING.md — First-time setup](CONTRIBUTING.md#first-time-setup).
+See also [CONTRIBUTING.md — First-time setup](CONTRIBUTING.md#first-time-setup).
 
 ## Performance and privacy
 
